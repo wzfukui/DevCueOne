@@ -1,0 +1,30 @@
+---
+import type { Locale } from '../data/site'
+
+interface Props {
+  currentLocale: Locale
+}
+
+const { currentLocale } = Astro.props
+
+const items = [
+  { code: 'en', label: 'English', href: '/en/' },
+  { code: 'zh', label: '中文', href: '/zh/' }
+] satisfies Array<{ code: Locale; label: string; href: string }>
+---
+
+<nav
+  class="locale-switch"
+  aria-label={currentLocale === 'zh' ? '语言切换' : 'Language switch'}
+>
+  {
+    items.map((item) => (
+      <a
+        class:list={['locale-pill', currentLocale === item.code && 'is-active']}
+        href={item.href}
+      >
+        {item.label}
+      </a>
+    ))
+  }
+</nav>

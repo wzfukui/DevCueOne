@@ -1,0 +1,118 @@
+---
+import '../styles/global.css'
+import { buildAbsoluteUrl, defaultOgImage, siteUrl } from '../data/seo'
+
+interface AlternateLink {
+  hrefLang: string
+  href: string
+}
+
+interface Props {
+  lang: 'en' | 'zh'
+  title: string
+  description: string
+  canonicalPath?: string
+  keywords?: readonly string[]
+  ogImagePath?: string
+  ogImageAlt?: string
+  noindex?: boolean
+  alternates?: AlternateLink[]
+  includeSoftwareSchema?: boolean
+}
+
+const {
+  lang,
+  title,
+  description,
+  canonicalPath = '/',
+  keywords = [],
+  ogImagePath = defaultOgImage.path,
+  ogImageAlt = defaultOgImage.alt[lang],
+  noindex = false,
+  alternates = [],
+  includeSoftwareSchema = false
+} = Astro.props
+
+const canonicalUrl = buildAbsoluteUrl(canonicalPath)
+const ogImageUrl = buildAbsoluteUrl(ogImagePath)
+const localeCode = lang === 'zh' ? 'zh_CN' : 'en_US'
+const robotsContent = noindex ? 'noindex,follow,max-image-preview:large' : 'index,follow,max-image-preview:large'
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    '@id': `${siteUrl}/#website`,
+    url: siteUrl,
+    name: 'DevCue One',
+    description,
+    inLanguage: ['en-US', 'zh-CN']
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    url: canonicalUrl,
+    name: title,
+    description,
+    inLanguage: lang === 'zh' ? 'zh-CN' : 'en-US',
+    isPartOf: {
+      '@id': `${siteUrl}/#website`
+    }
+  },
+  ...(includeSoftwareSchema
+    ? [
+        {
+          '@context': 'https://schema.org',
+          '@type': 'SoftwareApplication',
+          name: 'DevCue One',
+          applicationCategory: 'DeveloperApplication',
+          operatingSystem: 'macOS',
+          description,
+          url: canonicalUrl,
+          image: ogImageUrl
+        }
+      ]
+    : [])
+]
+---
+
+<!doctype html>
+<html class="light" lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="robots" content={robotsContent} />
+    <meta name="author" content="wzfukui" />
+    <meta name="application-name" content="DevCue One" />
+    {keywords.length > 0 && <meta name="keywords" content={keywords.join(', ')} />}
+    <meta name="theme-color" content="#faf9f6" />
+    <link rel="canonical" href={canonicalUrl} />
+    {alternates.map((alternate) => (
+      <link rel="alternate" hreflang={alternate.hrefLang} href={alternate.href} />
+    ))}
+    <meta property="og:site_name" content="DevCue One" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content={localeCode} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content={String(defaultOgImage.width)} />
+    <meta property="og:image:height" content={String(defaultOgImage.height)} />
+    <meta property="og:image:alt" content={ogImageAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230f2230'/%3E%3Cpath d='M18 22h14c8.8 0 14 5.2 14 13.2S40.8 48 32 48H18V22Zm8.2 7.2v11.6h5.1c4.3 0 6.9-2.1 6.9-5.8s-2.6-5.8-6.9-5.8h-5.1Z' fill='%23f7f3ec'/%3E%3C/svg%3E"
+    />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(schema)} />
+    <title>{title}</title>
+  </head>
+  <body class="bg-background text-on-background font-body selection:bg-secondary-container selection:text-on-secondary-container">
+    <slot />
+  </body>
+</html>

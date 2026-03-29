@@ -1,0 +1,99 @@
+---
+interface Props {
+  name: string
+  class?: string
+}
+
+const { name, class: className = '' } = Astro.props as Props
+---
+
+{
+  name === 'arrow_forward' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
+      <path d="M5 12h14" />
+      <path d="m13 6 6 6-6 6" />
+    </svg>
+  )
+}
+{
+  name === 'arrow_back' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
+      <path d="M19 12H5" />
+      <path d="m11 18-6-6 6-6" />
+    </svg>
+  )
+}
+{
+  name === 'team_dashboard' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7">
+      <rect x="3.5" y="4" width="8" height="6.5" rx="1.5" />
+      <rect x="12.5" y="4" width="8" height="10" rx="1.5" />
+      <rect x="3.5" y="11.5" width="8" height="8.5" rx="1.5" />
+      <rect x="12.5" y="15" width="8" height="5" rx="1.5" />
+    </svg>
+  )
+}
+{
+  name === 'construction' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7">
+      <path d="m14.5 4.5 5 5" />
+      <path d="m13 6 5 5" />
+      <path d="m4.5 19.5 8.5-8.5" />
+      <path d="m10.5 4.5-6 6" />
+      <path d="m8 7 4 4" />
+      <path d="m14 12 5.5 5.5" />
+    </svg>
+  )
+}
+{
+  name === 'inventory_2' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7">
+      <path d="M4 8.5 12 4l8 4.5" />
+      <path d="M4 8.5V18l8 4 8-4V8.5" />
+      <path d="M12 22V12" />
+      <path d="M8.5 10.5h7" />
+    </svg>
+  )
+}
+{
+  name === 'monitoring' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7">
+      <path d="M4 19.5h16" />
+      <path d="M6 16V9" />
+      <path d="M11 16V5" />
+      <path d="M16 16v-4" />
+      <path d="M21 16V7" />
+    </svg>
+  )
+}
+{
+  name === 'open_in_new' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
+      <path d="M14 5h5v5" />
+      <path d="m10 14 9-9" />
+      <path d="M19 14v5H5V5h5" />
+    </svg>
+  )
+}
+{
+  name === 'check_circle' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="m8.8 12.2 2.1 2.2 4.4-4.8" />
+    </svg>
+  )
+}
+{
+  name === 'github_mark' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="currentColor">
+      <path d="M12 .5C5.73.5.75 5.48.75 11.75c0 5.02 3.25 9.28 7.76 10.79.57.1.78-.25.78-.55 0-.27-.01-.99-.02-1.94-3.16.69-3.83-1.52-3.83-1.52-.52-1.31-1.27-1.66-1.27-1.66-1.04-.71.08-.7.08-.7 1.14.08 1.75 1.17 1.75 1.17 1.02 1.73 2.66 1.23 3.31.94.1-.73.4-1.23.72-1.51-2.52-.29-5.17-1.26-5.17-5.58 0-1.23.44-2.23 1.17-3.02-.12-.29-.5-1.46.11-3.04 0 0 .95-.3 3.13 1.15a10.9 10.9 0 0 1 5.7 0c2.18-1.45 3.13-1.15 3.13-1.15.61 1.58.23 2.75.11 3.04.73.79 1.17 1.79 1.17 3.02 0 4.33-2.66 5.29-5.2 5.57.41.35.77 1.04.77 2.09 0 1.51-.01 2.73-.01 3.1 0 .3.21.66.79.55 4.5-1.52 7.74-5.77 7.74-10.79C23.25 5.48 18.27.5 12 .5Z" />
+    </svg>
+  )
+}
+{
+  name === 'x_mark' && (
+    <svg viewBox="0 0 24 24" class={className} aria-hidden="true" fill="currentColor">
+      <path d="M18.9 2.25h3.19l-6.97 7.96 8.2 11.54h-6.42l-5.02-6.98-6.11 6.98H2.56l7.45-8.51L2.15 2.25h6.58l4.53 6.4 5.64-6.4Zm-1.13 17.57h1.77L7.77 4.08H5.87l11.9 15.74Z" />
+    </svg>
+  )
+}

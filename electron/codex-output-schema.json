@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spokenReply",
+    "uiReply",
+    "status",
+    "needTextContext",
+    "nextActionHint"
+  ],
+  "properties": {
+    "spokenReply": {
+      "type": "string",
+      "description": "给语音播报的简短中文文本，最多两句，不要用 Markdown。"
+    },
+    "uiReply": {
+      "type": "string",
+      "description": "给界面显示的完整结果，可以比 spokenReply 更详细。"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["done", "need_input", "failed"]
+    },
+    "needTextContext": {
+      "type": "boolean"
+    },
+    "nextActionHint": {
+      "type": "string",
+      "description": "给前端状态栏或下一步按钮的简短提示。"
+    }
+  }
+}

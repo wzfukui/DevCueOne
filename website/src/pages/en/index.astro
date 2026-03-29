@@ -1,0 +1,22 @@
+---
+import LandingPage from '../../components/LandingPage.astro'
+import { defaultOgImage, localizedAlternates, localeKeywords } from '../../data/seo'
+import MarketingLayout from '../../layouts/MarketingLayout.astro'
+import { siteContent } from '../../data/site'
+
+const content = siteContent.en
+---
+
+<MarketingLayout
+  lang="en"
+  title={content.title}
+  description={content.description}
+  canonicalPath="/en/"
+  keywords={localeKeywords.en}
+  alternates={localizedAlternates('/en/', '/zh/')}
+  ogImagePath={defaultOgImage.path}
+  ogImageAlt={defaultOgImage.alt.en}
+  includeSoftwareSchema
+>
+  <LandingPage locale="en" content={content} />
+</MarketingLayout>

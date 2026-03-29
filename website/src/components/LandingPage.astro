@@ -1,0 +1,843 @@
+---
+import Icon from './Icon.astro'
+import type { SiteLocaleContent } from '../data/site'
+import { repoUrl } from '../data/site'
+
+type Locale = 'en' | 'zh'
+
+interface Props {
+  locale: Locale
+  content: SiteLocaleContent
+}
+
+interface NavLink {
+  label: string
+  href: string
+}
+
+interface LegalLink {
+  label: string
+  href: string
+}
+
+interface FeatureCard {
+  icon: string
+  title: string
+  body: string
+  chips: string[]
+  cta: string
+  metricsLabel: string
+  metricsId: string
+}
+
+interface DownloadOption {
+  label: string
+  href: string
+}
+
+interface LandingCopy {
+  nav: NavLink[]
+  heroStatus: string
+  heroTitle: string
+  heroLead: string
+  primaryCta: string
+  primaryCtaHref: string
+  secondaryCta: string
+  secondaryCtaHref: string
+  integrationLabel: string
+  integrations: string[]
+  demoLabel: string
+  demoFrameLabel: string
+  demoTitle: string
+  demoLead: string
+  demoCta: string
+  demoCaption: string
+  featuresTitle: string
+  featuresLead: string
+  featureCards: FeatureCard[]
+  detailLabel: string
+  detailTitle: string
+  detailAccent: string
+  detailLead: string
+  detailPoints: Array<{ title: string; body: string }>
+  ctaTitle: string
+  ctaLead: string
+  ctaPrimary: string
+  ctaSecondary: string
+  footerMeta: string
+  footerTagline: string
+  aboutLabel: string
+  aboutKicker: string
+  aboutTitle: string
+  aboutLead: string
+  aboutAuthorLabel: string
+  aboutCloseLabel: string
+  footerLinks: LegalLink[]
+}
+
+const { locale } = Astro.props as Props
+const heroImage = '/screens/devcue-one-hero.jpg'
+const detailImage = '/screens/devcue-one-detail.svg'
+const downloadBaseUrl = 'https://d.devcue.one/DevCueOne'
+const bilibiliEmbedUrl =
+  'https://player.bilibili.com/player.html?isOutside=true&aid=116304593819654&bvid=BV1oJXVBhESc&cid=37035835777&p=1'
+const bilibiliPageUrl =
+  'https://www.bilibili.com/video/BV1oJXVBhESc/?share_source=copy_web&vd_source=54186efa4ddd36c2c793ae694ef28b7f'
+const releaseVersion = '0.4.1'
+const macArm64Url = `${downloadBaseUrl}/DevCue.One-${releaseVersion}-mac-arm64.dmg`
+const macX64Url = `${downloadBaseUrl}/DevCue.One-${releaseVersion}-mac-x64.dmg`
+const authorXUrl = 'https://x.com/fukui_wuzhi'
+const authorGithubUrl = 'https://github.com/wzfukui'
+const localeLinks = [
+  { code: 'en', label: 'EN', href: '/en/' },
+  { code: 'zh', label: '中文', href: '/zh/' }
+] as const
+const downloadOptionsByLocale: Record<Locale, DownloadOption[]> = {
+  en: [
+    { label: 'Download for Apple Silicon', href: macArm64Url },
+    { label: 'Download for Intel Mac', href: macX64Url }
+  ],
+  zh: [
+    { label: '下载 Apple 芯片版', href: macArm64Url },
+    { label: '下载 Intel 版', href: macX64Url }
+  ]
+}
+const releaseNoteByLocale: Record<Locale, string> = {
+  en: `DMG files hosted on R2. Version ${releaseVersion}.`,
+  zh: `DMG 文件已托管到 R2。版本 ${releaseVersion}。`
+}
+const copyByLocale: Record<Locale, LandingCopy> = {
+  en: {
+    nav: [
+      { label: 'Overview', href: '#overview' },
+      { label: 'Features', href: '#features' },
+      { label: 'Design', href: '#design' },
+      { label: 'Download', href: '#download' }
+    ],
+    heroStatus: 'Speak it, Ship it.',
+    heroTitle: 'Voice-Driven Multi-Session Development.',
+    heroLead:
+      'Speak the work out loud and let DevCue One direct Codex, Claude Code, Gemini, and other coding tools on your behalf. Coding no longer has to start with your hands on a keyboard. Even when you are not typing, the work can keep moving.',
+    primaryCta: 'Download for macOS',
+    primaryCtaHref: '#download',
+    secondaryCta: 'Explore Documentation',
+    secondaryCtaHref: '#design',
+    integrationLabel: 'Integration',
+    integrations: ['Codex', 'Claude Code', 'Cursor CLI', 'Gemini CLI', 'Qwen Code'],
+    demoLabel: 'Product Demo',
+    demoFrameLabel: 'Demo Video',
+    demoTitle: 'Watch voice become real development work.',
+    demoLead:
+      'From spoken intent to terminal execution, DevCue One keeps your tools, context, and parallel sessions moving together so work keeps shipping even when your hands leave the keyboard.',
+    demoCta: 'Watch the demo on Bilibili',
+    demoCaption: 'A quick walkthrough of voice-driven coding, command-line orchestration, and multi-session execution in DevCue One.',
+    featuresTitle: 'Designed for the Thinking Engineer.',
+    featuresLead:
+      'We strip away the noise of modern IDEs to focus on semantic clarity and parallel task management.',
+    featureCards: [
+      {
+        icon: 'team_dashboard',
+        title: 'Multi-session parallel tasks',
+        body:
+          'Deploy independent agents across multiple environments simultaneously. Refactor your backend while the frontend agent updates documentation in real-time.',
+        chips: ['SESSION_A: REFACTOR', 'SESSION_B: TEST_ENV'],
+        cta: '',
+        metricsLabel: '',
+        metricsId: ''
+      },
+      {
+        icon: 'construction',
+        title: 'Global Tool Selection',
+        body:
+          'Hot-swap between Codex, Claude Code, or your own local Cursor CLI instances without losing context.',
+        chips: ['CODEX_API', 'CLAUDE_3', 'CURSOR_CLI', 'CUSTOM_LLM'],
+        cta: '',
+        metricsLabel: '',
+        metricsId: ''
+      },
+      {
+        icon: 'inventory_2',
+        title: 'Custom Project Profiles',
+        body:
+          'Environment-specific rules, style guides, and documentation contexts that travel with your project metadata.',
+        chips: ['TS', 'PY', 'GO'],
+        cta: '',
+        metricsLabel: '',
+        metricsId: ''
+      },
+      {
+        icon: 'monitoring',
+        title: 'Visual Diagnostics',
+        body:
+          'High-fidelity telemetry visualizations. Monitor token usage, agent reasoning paths, and system health in a unified HUD.',
+        chips: [],
+        cta: 'Read the whitepaper',
+        metricsLabel: 'Live Reasoning Path',
+        metricsId: 'ID: DX-409'
+      }
+    ],
+    detailLabel: 'Curator Module',
+    detailTitle: 'Sustainable Productivity.',
+    detailAccent: 'By Design.',
+    detailLead:
+      "We believe coding shouldn't be a battle of attrition. DevCue One is engineered to reduce cognitive load, allowing you to focus on the high-level architecture while our curated intelligence handles the implementation details.",
+    detailPoints: [
+      {
+        title: 'Contextual Awareness',
+        body: "Intelligent memory that actually understands your project's specific quirks."
+      },
+      {
+        title: 'Focused Intent',
+        body: 'Voice commands designed for professional workflows, not simple chat.'
+      }
+    ],
+    ctaTitle: 'Choose the Mac build that matches your machine.',
+    ctaLead: `DevCue One ${releaseVersion} is ready with separate Apple Silicon and Intel downloads. Enterprise packaging is coming next.`,
+    ctaPrimary: 'Download Early Access',
+    ctaSecondary: 'Enterprise edition coming soon',
+    footerMeta: '© 2026',
+    footerTagline: 'Local desktop client for voice-driven multi-session development.',
+    aboutLabel: 'About',
+    aboutKicker: 'About DevCue One',
+    aboutTitle: 'Your first desktop voice assistant for coding while lying down.',
+    aboutLead: 'How smart do you have to be before laziness becomes a serious workflow advantage?',
+    aboutAuthorLabel: 'Author',
+    aboutCloseLabel: 'Close',
+    footerLinks: [
+      { label: 'Privacy', href: '/en/privacy/' },
+      { label: 'Terms', href: '/en/terms/' }
+    ]
+  },
+  zh: {
+    nav: [
+      { label: '概览', href: '#overview' },
+      { label: '特性', href: '#features' },
+      { label: '设计', href: '#design' },
+      { label: '下载', href: '#download' }
+    ],
+    heroStatus: 'Speak it, Ship it.',
+    heroTitle: '语音驱动的多会话开发。',
+    heroLead:
+      '把需求直接说出来，DevCue One 就会去调度 Codex、Claude Code、Gemini 等开发工具，把口头表达接成真正推进中的工作。编程不该再被键盘拴住。就算你不敲键盘，项目也能继续往前走。',
+    primaryCta: '下载 macOS 版本',
+    primaryCtaHref: '#download',
+    secondaryCta: '查看产品说明',
+    secondaryCtaHref: '#design',
+    integrationLabel: '集成',
+    integrations: ['Codex', 'Claude Code', 'Cursor CLI', 'Gemini CLI', 'Qwen Code'],
+    demoLabel: '产品演示',
+    demoFrameLabel: '演示视频',
+    demoTitle: '看一遍，就知道语音如何真正推动开发往前走。',
+    demoLead:
+      '从口头需求到命令行执行，DevCue One 会把工具调度、上下文和多会话协作接成一条顺滑的工作流，让你不守着键盘，也能持续推进开发。',
+    demoCta: '去哔哩哔哩看演示',
+    demoCaption: '快速看看 DevCue One 如何把语音输入、命令行编排和多会话协作接成真正可推进的开发流程。',
+    featuresTitle: '为真正思考中的工程师而设计。',
+    featuresLead: '我们拿掉现代 IDE 的噪音，把注意力重新交还给语义清晰度、并行推进和上下文掌控。',
+    featureCards: [
+      {
+        icon: 'team_dashboard',
+        title: '多会话并行任务',
+        body: '把独立代理分发到多个环境同时推进。你在改后端时，前端代理也能实时补齐文档和界面细节。',
+        chips: ['会话_A：重构', '会话_B：测试环境'],
+        cta: '',
+        metricsLabel: '',
+        metricsId: ''
+      },
+      {
+        icon: 'construction',
+        title: '全局工具选择',
+        body: 'Codex、Claude Code，或者你自己的本地 Cursor CLI，都能在不丢上下文的前提下直接切换。',
+        chips: ['CODEX_API', 'CLAUDE_3', 'CURSOR_CLI', 'CUSTOM_LLM'],
+        cta: '',
+        metricsLabel: '',
+        metricsId: ''
+      },
+      {
+        icon: 'inventory_2',
+        title: '项目画像随项目走',
+        body: '环境规则、风格指南和文档上下文会跟着项目元数据一起走，不再靠你脑子里硬记。',
+        chips: ['TS', 'PY', 'GO'],
+        cta: '',
+        metricsLabel: '',
+        metricsId: ''
+      },
+      {
+        icon: 'monitoring',
+        title: '可视化诊断',
+        body: '高保真的遥测视图把 token 使用、代理推理路径和系统健康状态收进同一块仪表盘里。',
+        chips: [],
+        cta: '查看白皮书',
+        metricsLabel: '实时推理路径',
+        metricsId: 'ID：DX-409'
+      }
+    ],
+    detailLabel: 'Curator Module',
+    detailTitle: '可持续的生产力。',
+    detailAccent: '设计使然。',
+    detailLead:
+      '我们不认为编程该是一场比耐力的消耗战。DevCue One 通过降低认知负荷，让你把注意力放在更高层的架构判断上，把细节实现交给经过策展的智能层去推进。',
+    detailPoints: [
+      {
+        title: '上下文感知',
+        body: '它记住的不是空泛聊天记录，而是你这个项目真正奇怪又关键的脾气。'
+      },
+      {
+        title: '聚焦意图',
+        body: '这些语音指令是为专业开发流设计的，不是拿来陪聊的。'
+      }
+    ],
+    ctaTitle: '选择适合你机器的 Mac 版本。',
+    ctaLead: `DevCue One ${releaseVersion} 已提供 Apple 芯片版和 Intel 版两个下载包，企业版入口也会保留在这里。`,
+    ctaPrimary: '下载早期访问版',
+    ctaSecondary: '企业版即将开放',
+    footerMeta: '© 2026',
+    footerTagline: '面向多会话开发的本地语音桌面客户端。',
+    aboutLabel: '关于',
+    aboutKicker: '关于 DevCue One',
+    aboutTitle: '你的第一个躺着也可以编程的桌面语音助理。',
+    aboutLead: '你是有多聪明，以至于如此的懒……把想法说出来，剩下的交给 DevCue One。',
+    aboutAuthorLabel: '作者',
+    aboutCloseLabel: '关闭',
+    footerLinks: [
+      { label: '隐私', href: '/zh/privacy/' },
+      { label: '条款', href: '/zh/terms/' }
+    ]
+  }
+}
+
+const copy = copyByLocale[locale]
+const downloadOptions = downloadOptionsByLocale[locale]
+const releaseNote = releaseNoteByLocale[locale]
+---
+
+<div class="fixed inset-0 z-0 pointer-events-none textured-bg"></div>
+
+<header class="sticky top-0 z-50 flex w-full items-center justify-between border-b border-[#071a25]/10 bg-[#faf9f6] px-6 py-3 dark:bg-[#1a1c1a]">
+  <div class="flex items-center gap-8">
+    <span class="font-headline text-2xl font-semibold tracking-tighter text-[#071a25] dark:text-[#f4f3f1]">DevCue One</span>
+    <nav class="hidden items-center gap-6 md:flex">
+      {copy.nav.map((item, index) => (
+        <a
+          href={item.href}
+          data-nav-link
+          class:list={[
+            'font-label text-sm transition-colors duration-200',
+            index === 0
+              ? 'border-b-2 border-[#071a25] pb-1 text-[#071a25] dark:border-[#e3e2e0] dark:text-white'
+              : 'text-[#5f6368] hover:text-[#071a25] dark:text-[#9aa0a6]'
+          ]}
+        >
+          {item.label}
+        </a>
+      ))}
+    </nav>
+  </div>
+  <div class="flex items-center gap-3">
+    <nav
+      class="inline-flex items-center rounded-full border border-outline-variant/40 bg-surface-container-low p-1"
+      aria-label={locale === 'zh' ? '语言切换' : 'Language switch'}
+    >
+      {localeLinks.map((item) => (
+        <a
+          href={item.href}
+          class:list={[
+            'inline-flex min-h-11 items-center rounded-full px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] transition-colors duration-200 md:min-h-0 md:px-3 md:py-1.5 md:text-[10px] md:tracking-[0.2em]',
+            item.code === locale
+              ? 'bg-primary text-on-primary'
+              : 'text-[#5f6368] hover:text-[#071a25] dark:text-[#9aa0a6]'
+          ]}
+        >
+          {item.label}
+        </a>
+      ))}
+    </nav>
+    <a
+      href={repoUrl}
+      target="_blank"
+      rel="noreferrer"
+      class="group inline-flex h-11 w-11 items-center justify-center rounded-full bg-surface-container-low transition-colors duration-200 hover:bg-surface-container-high"
+      aria-label="GitHub repository"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="h-4 w-4 fill-[#071a25]">
+        <path d="M12 .5C5.73.5.75 5.48.75 11.75c0 5.02 3.25 9.28 7.76 10.79.57.1.78-.25.78-.55 0-.27-.01-.99-.02-1.94-3.16.69-3.83-1.52-3.83-1.52-.52-1.31-1.27-1.66-1.27-1.66-1.04-.71.08-.7.08-.7 1.14.08 1.75 1.17 1.75 1.17 1.02 1.73 2.66 1.23 3.31.94.1-.73.4-1.23.72-1.51-2.52-.29-5.17-1.26-5.17-5.58 0-1.23.44-2.23 1.17-3.02-.12-.29-.5-1.46.11-3.04 0 0 .95-.3 3.13 1.15a10.9 10.9 0 0 1 5.7 0c2.18-1.45 3.13-1.15 3.13-1.15.61 1.58.23 2.75.11 3.04.73.79 1.17 1.79 1.17 3.02 0 4.33-2.66 5.29-5.2 5.57.41.35.77 1.04.77 2.09 0 1.51-.01 2.73-.01 3.1 0 .3.21.66.79.55 4.5-1.52 7.74-5.77 7.74-10.79C23.25 5.48 18.27.5 12 .5Z" />
+      </svg>
+    </a>
+  </div>
+</header>
+
+<main class="relative z-10">
+  <section class="relative overflow-hidden px-6 pb-32 pt-24" id="overview">
+    <div class="pointer-events-none absolute right-0 top-0 -mr-48 -mt-24 h-[600px] w-[600px] rounded-full bg-secondary-container/10 blur-[120px]"></div>
+    <div class="mx-auto max-w-7xl lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-x-16 lg:gap-y-10">
+      <div class="space-y-8">
+        <div class="inline-flex items-center gap-2 rounded-full bg-surface-container-high px-3 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-secondary">
+          <span class="relative flex h-2 w-2">
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-secondary opacity-75"></span>
+            <span class="relative inline-flex h-2 w-2 rounded-full bg-secondary"></span>
+          </span>
+          {copy.heroStatus}
+        </div>
+        <h1 class="max-w-xl font-headline leading-[1.05] tracking-tight text-primary text-display-lg" style="font-size: clamp(3rem, 8vw, 4.5rem);">
+          {copy.heroTitle}
+        </h1>
+        <p class="max-w-lg font-body text-lg leading-relaxed text-on-surface-variant">
+          {copy.heroLead}
+        </p>
+      </div>
+
+      <div class="relative mt-12 lg:mt-0 lg:self-end">
+        <div class="aspect-[1800/1065] overflow-hidden border border-outline-variant/10 shadow-2xl shadow-primary/5">
+          <img
+            src={heroImage}
+            alt="DevCue One desktop screenshot"
+            data-alt="DevCueOne local client screenshot showing multi-session voice-driven development workspace"
+            class="h-full w-full object-contain object-top"
+          />
+        </div>
+      </div>
+
+      <div class="pt-12 lg:col-start-1 lg:pt-0">
+        <div class="flex flex-wrap gap-4 pt-4">
+          <a
+            href={copy.primaryCtaHref}
+            class="group flex items-center gap-3 rounded-lg bg-primary px-8 py-4 font-label font-medium text-on-primary transition-transform hover:scale-[0.98]"
+          >
+            {copy.primaryCta}
+            <Icon name="arrow_forward" class="h-4 w-4 transition-transform group-hover:translate-x-1" />
+          </a>
+        </div>
+        <div class="flex items-center gap-8 border-t border-outline-variant/10 pt-8">
+          <div>
+            <span class="mb-1 block font-mono text-[10px] uppercase tracking-widest text-outline">{copy.integrationLabel}</span>
+            <div class="flex gap-4 opacity-50 grayscale transition-all duration-500 hover:grayscale-0">
+              {copy.integrations.map((integration) => (
+                <span class="font-headline text-lg italic text-primary">{integration}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="px-6 pb-24" id="demo">
+    <div class="mx-auto max-w-7xl">
+      <div class="relative overflow-hidden rounded-[2rem] border border-outline-variant/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.55),rgba(239,238,235,0.9))] p-6 shadow-[0_28px_100px_rgba(7,26,37,0.08)] sm:p-8 lg:grid lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] lg:items-start lg:gap-10 lg:p-10">
+        <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(129,85,39,0.45),transparent)]"></div>
+        <div class="relative space-y-6">
+          <div class="inline-flex items-center gap-2 rounded-full border border-secondary/20 bg-white/70 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.24em] text-secondary">
+            <span class="h-1.5 w-1.5 rounded-full bg-secondary"></span>
+            {copy.demoLabel}
+          </div>
+          <div class="space-y-4">
+            <h2 class="max-w-md font-headline text-4xl leading-[1.05] text-primary sm:text-[2.8rem]">
+              {copy.demoTitle}
+            </h2>
+            <p class="max-w-md font-body text-base leading-7 text-on-surface-variant sm:text-lg">
+              {copy.demoLead}
+            </p>
+          </div>
+          <a
+            href={bilibiliPageUrl}
+            target="_blank"
+            rel="noreferrer"
+            class="group inline-flex min-h-11 items-center gap-3 rounded-full border border-primary/12 bg-primary px-5 py-3 font-label text-sm font-medium text-on-primary transition-transform hover:scale-[0.98]"
+          >
+            {copy.demoCta}
+            <Icon name="open_in_new" class="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </a>
+        </div>
+
+        <div class="relative mt-10 lg:mt-0">
+          <div class="pointer-events-none absolute inset-0 scale-[1.02] rounded-[1.6rem] bg-[radial-gradient(circle_at_top_right,rgba(246,187,132,0.24),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(79,97,109,0.18),transparent_42%)] blur-xl"></div>
+          <div class="relative overflow-hidden rounded-[1.6rem] border border-primary/12 bg-[#0b1218] shadow-[0_26px_90px_rgba(7,26,37,0.2)]">
+            <div class="flex items-center justify-between border-b border-white/8 bg-[#111b23] px-4 py-3 text-[#d8e5eb]">
+              <div class="flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full bg-[#f6bb84]"></span>
+                <span class="h-2.5 w-2.5 rounded-full bg-[#d2e5f4]/70"></span>
+                <span class="h-2.5 w-2.5 rounded-full bg-[#7fb5c5]/70"></span>
+              </div>
+              <span class="font-mono text-[10px] uppercase tracking-[0.24em] text-[#9db0bb]">{copy.demoFrameLabel}</span>
+            </div>
+            <div class="aspect-video bg-[#0b1218]">
+              <iframe
+                src={bilibiliEmbedUrl}
+                title="DevCue One product demo on Bilibili"
+                loading="lazy"
+                allowfullscreen
+                class="h-full w-full"
+              ></iframe>
+            </div>
+          </div>
+          <p class="mt-4 max-w-2xl font-mono text-[10px] uppercase tracking-[0.24em] text-outline">
+            {copy.demoCaption}
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bg-surface-container-low px-6 py-32" id="features">
+    <div class="mx-auto max-w-7xl">
+      <div class="mx-auto mb-20 max-w-2xl text-center">
+        <h2 class="mb-6 font-headline text-4xl text-primary">{copy.featuresTitle}</h2>
+        <p class="font-body text-on-surface-variant">{copy.featuresLead}</p>
+      </div>
+
+      <div class="grid grid-cols-1 gap-8 md:grid-cols-12">
+        <div class="group flex min-h-[480px] flex-col justify-between rounded-xl bg-surface p-12 transition-all duration-500 hover:bg-surface-container-high md:col-span-7">
+          <div>
+            <Icon name={copy.featureCards[0].icon} class="mb-8 h-10 w-10 text-secondary" />
+            <h3 class="mb-4 font-headline text-3xl text-primary">{copy.featureCards[0].title}</h3>
+            <p class="max-w-md font-body leading-relaxed text-on-surface-variant">
+              {copy.featureCards[0].body}
+            </p>
+          </div>
+          <div class="mt-12 flex gap-2">
+            {copy.featureCards[0].chips.map((chip) => (
+              <div class="rounded-md border border-outline-variant/10 bg-surface-container-lowest px-4 py-2 font-mono text-xs">{chip}</div>
+            ))}
+          </div>
+        </div>
+
+        <div class="group flex flex-col items-center justify-center rounded-xl bg-surface-container-highest p-10 text-center transition-transform duration-500 hover:-translate-y-2 md:col-span-5">
+          <Icon name={copy.featureCards[1].icon} class="mb-6 h-10 w-10 text-primary" />
+          <h3 class="mb-4 font-headline text-2xl">{copy.featureCards[1].title}</h3>
+          <p class="mb-8 px-4 font-body text-sm text-on-surface-variant">{copy.featureCards[1].body}</p>
+          <div class="grid w-full max-w-xs grid-cols-2 gap-3">
+            {copy.featureCards[1].chips.map((chip, index) => (
+              <div
+                class:list={[
+                  'rounded-lg border border-outline-variant/10 p-3 font-mono text-[10px]',
+                  index === 3 ? 'bg-primary text-on-primary' : 'bg-surface'
+                ]}
+              >
+                {chip}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="group relative overflow-hidden rounded-xl bg-secondary-container/20 p-10 md:col-span-5">
+          <div class="absolute right-0 top-0 p-6 opacity-10 transition-transform duration-700 group-hover:scale-110">
+            <Icon name={copy.featureCards[2].icon} class="h-24 w-24 text-secondary" />
+          </div>
+          <h3 class="relative z-10 mb-4 font-headline text-2xl">{copy.featureCards[2].title}</h3>
+          <p class="relative z-10 max-w-xs font-body text-sm text-on-secondary-container/80">{copy.featureCards[2].body}</p>
+          <div class="relative z-10 mt-12 flex -space-x-2">
+            {copy.featureCards[2].chips.map((chip, index) => (
+              <div
+                class:list={[
+                  'flex h-10 w-10 items-center justify-center rounded-full border-2 border-surface font-mono text-[10px] text-white',
+                  index === 0 ? 'bg-primary' : index === 1 ? 'bg-secondary' : 'bg-outline'
+                ]}
+              >
+                {chip}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="flex flex-col items-center gap-8 rounded-xl bg-primary p-12 text-on-primary md:col-span-7 md:flex-row">
+          <div class="flex-1">
+            <h3 class="mb-4 font-headline text-3xl">{copy.featureCards[3].title}</h3>
+            <p class="font-body leading-relaxed text-primary-fixed/70">{copy.featureCards[3].body}</p>
+            <button
+              type="button"
+              class="mt-8 inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-2 font-mono text-xs uppercase tracking-widest text-secondary-fixed transition-colors hover:bg-white/5 hover:underline md:min-h-0 md:rounded-none md:px-0 md:py-0"
+            >
+              {copy.featureCards[3].cta}
+              <Icon name="open_in_new" class="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div class="flex h-48 w-full flex-1 flex-col justify-between rounded-lg border border-on-primary/10 bg-primary-container p-4">
+            <div class="flex items-start justify-between">
+              <span class="font-mono text-[10px] uppercase tracking-widest opacity-50">{copy.featureCards[3].metricsLabel}</span>
+              <span class="font-mono text-[10px] text-secondary">{copy.featureCards[3].metricsId}</span>
+            </div>
+            <div class="space-y-2">
+              <div class="h-1 overflow-hidden rounded-full bg-on-primary/10">
+                <div class="h-full w-2/3 bg-secondary-fixed"></div>
+              </div>
+              <div class="h-1 overflow-hidden rounded-full bg-on-primary/10">
+                <div class="h-full w-1/2 bg-secondary"></div>
+              </div>
+              <div class="h-1 overflow-hidden rounded-full bg-on-primary/10">
+                <div class="h-full w-4/5 bg-secondary-fixed"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="overflow-hidden px-6 py-24" id="design">
+    <div class="mx-auto flex max-w-7xl flex-col items-center gap-20 lg:flex-row">
+      <div class="order-2 relative lg:order-1 lg:w-1/2">
+        <div class="relative aspect-square overflow-hidden rounded-xl bg-surface-container-highest">
+          <img
+            src={detailImage}
+            alt="Digital intelligence abstraction"
+            data-alt="Abstract artistic representation of neural pathways in warm amber and deep blue-grey colors with organic fluid shapes"
+            class="h-full w-full object-cover opacity-80 mix-blend-multiply"
+          />
+          <div class="absolute inset-0 flex items-center justify-center p-12">
+            <div class="w-full rounded-xl bg-surface/90 p-8 shadow-xl backdrop-blur-xl">
+              <span class="mb-4 block font-mono text-[10px] uppercase tracking-[0.3em] text-secondary">{copy.detailLabel}</span>
+              <div class="space-y-4">
+                <div class="h-4 w-3/4 rounded bg-primary/10"></div>
+                <div class="h-4 w-full rounded bg-primary/10"></div>
+                <div class="h-4 w-1/2 rounded bg-primary/10"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="order-1 space-y-8 lg:order-2 lg:w-1/2">
+        <h2 class="font-headline text-5xl leading-tight text-primary">
+          {copy.detailTitle}
+          <br />
+          <span class="italic text-secondary">{copy.detailAccent}</span>
+        </h2>
+        <p class="font-body text-lg leading-relaxed text-on-surface-variant">{copy.detailLead}</p>
+        <ul class="space-y-6">
+          {copy.detailPoints.map((point) => (
+            <li class="flex gap-4">
+              <Icon name="check_circle" class="mt-0.5 h-5 w-5 text-secondary" />
+              <div>
+                <span class="block font-label font-bold text-primary">{point.title}</span>
+                <span class="text-sm text-on-surface-variant">{point.body}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="px-6 py-24" id="download">
+    <div class="relative mx-auto max-w-5xl overflow-hidden rounded-[3rem] bg-primary p-16 text-center text-on-primary">
+      <div class="absolute inset-0 textured-bg opacity-10"></div>
+      <div class="relative z-10">
+        <h2 class="mb-8 font-headline text-4xl md:text-5xl">{copy.ctaTitle}</h2>
+        <p class="mx-auto mb-12 max-w-xl font-body text-primary-fixed/60">{copy.ctaLead}</p>
+        <div class="flex flex-col justify-center gap-4 sm:flex-row">
+          {downloadOptions.map((option, index) => (
+            <a
+              href={option.href}
+              target="_blank"
+              rel="noreferrer"
+              class:list={[
+                'rounded-full px-10 py-5 font-label transition-all hover:scale-95',
+                index === 0
+                  ? 'bg-secondary-container font-bold text-on-secondary-container'
+                  : 'border border-on-primary/20 font-medium hover:bg-on-primary/5'
+              ]}
+            >
+              {option.label}
+            </a>
+          ))}
+          <button
+            type="button"
+            disabled
+            aria-disabled="true"
+            class="cursor-not-allowed rounded-full border border-on-primary/12 px-10 py-5 font-label font-medium text-primary-fixed/55 opacity-70"
+          >
+            {copy.ctaSecondary}
+          </button>
+        </div>
+        <p class="mt-6 font-mono text-[10px] uppercase tracking-[0.24em] text-primary-fixed/45">{releaseNote}</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="relative z-10 border-t border-[#c3c7cb]/15 bg-[#faf9f6] py-10 dark:bg-[#071a25]">
+  <div class="mx-auto flex max-w-7xl flex-col gap-5 px-8 md:flex-row md:items-end md:justify-between">
+    <div class="flex flex-col gap-2">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span class="font-headline text-xl font-bold tracking-tight text-[#071a25]">DevCue One</span>
+        <span class="font-mono text-[10px] uppercase tracking-widest text-[#815527] dark:text-[#ffc38c]">{copy.footerMeta}</span>
+        <span class="text-sm text-[#5f6368]">{copy.footerTagline}</span>
+      </div>
+    </div>
+    <nav class="flex flex-wrap items-center gap-6">
+      <button
+        type="button"
+        data-about-open
+        class="inline-flex min-h-11 items-center rounded-full bg-surface-container-low px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-[#5f6368] transition-colors hover:text-[#815527] md:min-h-0 md:rounded-none md:bg-transparent md:px-0 md:py-0 md:text-[10px] md:tracking-widest"
+      >
+        {copy.aboutLabel}
+      </button>
+      {copy.footerLinks.map((item) => (
+        <a
+          href={item.href}
+          class="inline-flex min-h-11 items-center rounded-full bg-surface-container-low px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-[#5f6368] transition-colors hover:text-[#815527] md:min-h-0 md:rounded-none md:bg-transparent md:px-0 md:py-0 md:text-[10px] md:tracking-widest"
+        >
+          {item.label}
+        </a>
+      ))}
+    </nav>
+  </div>
+</footer>
+
+<div
+  data-about-modal
+  class="pointer-events-none fixed inset-0 z-[80] hidden"
+  aria-hidden="true"
+>
+  <div data-about-backdrop class="absolute inset-0 bg-[rgba(7,26,37,0.58)] opacity-0 backdrop-blur-sm transition-opacity duration-200"></div>
+  <div class="flex min-h-full items-center justify-center px-6 py-10">
+    <div
+      data-about-panel
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="about-title"
+      class="relative w-full max-w-xl translate-y-4 scale-[0.98] overflow-hidden rounded-[2rem] border border-[#9ddff0]/24 bg-[#09131b] p-8 text-[#f4f3f1] opacity-0 shadow-[0_36px_140px_rgba(7,26,37,0.62)] ring-1 ring-black/18 transition-all duration-200"
+    >
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(246,187,132,0.14),transparent_30%),radial-gradient(circle_at_left_center,rgba(92,214,235,0.1),transparent_24%)]"></div>
+      <div class="relative z-10">
+        <div class="flex items-start justify-between gap-6">
+          <div class="space-y-4">
+            <p class="font-mono text-[10px] uppercase tracking-[0.28em] text-[#f6bb84]">{copy.aboutKicker}</p>
+            <h2 id="about-title" class="max-w-lg font-headline text-3xl leading-tight text-[#f7f3ec] md:text-[2.35rem]">
+              {copy.aboutTitle}
+            </h2>
+            <p class="max-w-md font-body text-base leading-relaxed text-[#b9cad4]">
+              {copy.aboutLead}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-about-close
+            class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#d8e5eb] transition-colors hover:bg-white/10"
+            aria-label={copy.aboutCloseLabel}
+          >
+            <span class="text-lg leading-none">×</span>
+          </button>
+        </div>
+        <div class="mt-10 flex flex-wrap items-center justify-between gap-6 border-t border-white/10 pt-6">
+          <div>
+            <p class="font-mono text-[10px] uppercase tracking-[0.28em] text-[#7fb5c5]">{copy.aboutAuthorLabel}</p>
+            <p class="mt-2 font-body text-sm text-[#b9cad4]">wzfukui</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <a
+              href={authorXUrl}
+              target="_blank"
+              rel="noreferrer"
+              class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#f7f3ec] transition-colors hover:bg-white/10"
+              aria-label="X"
+            >
+              <Icon name="x_mark" class="h-4 w-4" />
+            </a>
+            <a
+              href={authorGithubUrl}
+              target="_blank"
+              rel="noreferrer"
+              class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#f7f3ec] transition-colors hover:bg-white/10"
+              aria-label="GitHub"
+            >
+              <Icon name="github_mark" class="h-4 w-4" />
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+  const navLinks = Array.from(document.querySelectorAll('[data-nav-link]'))
+  const sectionIds = navLinks
+    .map((link) => link.getAttribute('href'))
+    .filter((href) => href && href.startsWith('#'))
+    .map((href) => href.slice(1))
+
+  const setActiveLink = (targetHash) => {
+    navLinks.forEach((link) => {
+      const isActive = link.getAttribute('href') === targetHash
+      link.classList.toggle('border-b-2', isActive)
+      link.classList.toggle('border-[#071a25]', isActive)
+      link.classList.toggle('dark:border-[#e3e2e0]', isActive)
+      link.classList.toggle('pb-1', isActive)
+      link.classList.toggle('text-[#071a25]', isActive)
+      link.classList.toggle('dark:text-white', isActive)
+      link.classList.toggle('text-[#5f6368]', !isActive)
+      link.classList.toggle('dark:text-[#9aa0a6]', !isActive)
+    })
+  }
+
+  const syncActiveLink = () => {
+    const fromHash = window.location.hash
+    if (fromHash && sectionIds.includes(fromHash.slice(1))) {
+      setActiveLink(fromHash)
+      return
+    }
+
+    const marker = window.scrollY + window.innerHeight * 0.35
+    let current = '#overview'
+
+    sectionIds.forEach((id) => {
+      const section = document.getElementById(id)
+      if (section && section.offsetTop <= marker) {
+        current = `#${id}`
+      }
+    })
+
+    setActiveLink(current)
+  }
+
+  syncActiveLink()
+  window.addEventListener('hashchange', syncActiveLink)
+  window.addEventListener('scroll', syncActiveLink, { passive: true })
+
+  const aboutModal = document.querySelector('[data-about-modal]')
+  const aboutBackdrop = document.querySelector('[data-about-backdrop]')
+  const aboutPanel = document.querySelector('[data-about-panel]')
+  const aboutOpeners = Array.from(document.querySelectorAll('[data-about-open]'))
+  const aboutClosers = Array.from(document.querySelectorAll('[data-about-close]'))
+  let aboutHideTimer
+
+  const showAboutModal = (event) => {
+    if (!aboutModal || !aboutBackdrop || !aboutPanel) return
+    if (event?.currentTarget instanceof HTMLElement) {
+      aboutModal.dataset.lastTrigger = 'footer'
+    }
+    window.clearTimeout(aboutHideTimer)
+    aboutModal.classList.remove('hidden')
+    aboutModal.classList.remove('pointer-events-none')
+    aboutModal.setAttribute('aria-hidden', 'false')
+    document.body.classList.add('overflow-hidden')
+    aboutBackdrop.classList.remove('opacity-0')
+    aboutBackdrop.classList.add('opacity-100')
+    aboutPanel.classList.remove('translate-y-4', 'scale-[0.98]', 'opacity-0')
+    aboutPanel.classList.add('translate-y-0', 'scale-100', 'opacity-100')
+  }
+
+  const hideAboutModal = () => {
+    if (!aboutModal || !aboutBackdrop || !aboutPanel) return
+    aboutBackdrop.classList.remove('opacity-100')
+    aboutBackdrop.classList.add('opacity-0')
+    aboutPanel.classList.remove('translate-y-0', 'scale-100', 'opacity-100')
+    aboutPanel.classList.add('translate-y-4', 'scale-[0.98]', 'opacity-0')
+    document.body.classList.remove('overflow-hidden')
+    aboutModal.setAttribute('aria-hidden', 'true')
+    aboutHideTimer = window.setTimeout(() => {
+      aboutModal.classList.add('hidden')
+      aboutModal.classList.add('pointer-events-none')
+    }, 220)
+  }
+
+  aboutOpeners.forEach((button) => button.addEventListener('click', showAboutModal))
+  aboutClosers.forEach((button) => button.addEventListener('click', hideAboutModal))
+  aboutBackdrop?.addEventListener('click', hideAboutModal)
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && aboutModal?.getAttribute('aria-hidden') === 'false') {
+      hideAboutModal()
+    }
+  })
+</script>

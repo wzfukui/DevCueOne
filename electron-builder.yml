@@ -1,0 +1,32 @@
+appId: one.devcue.app
+productName: DevCueOne
+artifactName: DevCue.One-${version}-${os}-${arch}.${ext}
+asar: true
+npmRebuild: false
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+  - '!docs{,/**/*}'
+  - '!test{,/**/*}'
+  - '!scripts{,/**/*}'
+  - '!src{,/**/*}'
+  - '!.github{,/**/*}'
+  - '!tmp{,/**/*}'
+mac:
+  category: public.app-category.developer-tools
+  icon: build/branding/icon.icns
+  target:
+    - dmg
+    - zip
+win:
+  icon: build/branding/icon.ico
+  target:
+    - nsis
+linux:
+  icon: build/branding/icon.png
+  target:
+    - AppImage

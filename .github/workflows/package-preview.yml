@@ -1,0 +1,32 @@
+name: Package Preview
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mac-preview:
+    runs-on: macos-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dual-arch preview artifacts
+        run: npm run release:mac:local
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DesktopVoiceAgent-mac-preview
+          path: release/**
+          if-no-files-found: error

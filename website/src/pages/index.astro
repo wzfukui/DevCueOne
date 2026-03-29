@@ -1,0 +1,35 @@
+---
+import { defaultOgImage, localizedAlternates } from '../data/seo'
+import MarketingLayout from '../layouts/MarketingLayout.astro'
+---
+
+<MarketingLayout
+  lang="en"
+  title="DevCue One | Choose language"
+  description="Choose English or Chinese for the DevCue One launch site."
+  canonicalPath="/"
+  alternates={localizedAlternates('/en/', '/zh/')}
+  ogImagePath={defaultOgImage.path}
+  ogImageAlt={defaultOgImage.alt.en}
+  noindex
+>
+  <main class="locale-entry">
+    <section class="locale-entry-card">
+      <p class="section-chip">DevCue One</p>
+      <h1>Speak it. Ship it.</h1>
+      <p>
+        Redirecting to the most likely language. You can also choose directly.
+      </p>
+
+      <div class="hero-actions">
+        <a class="button-primary" href="/en/">English</a>
+        <a class="button-secondary" href="/zh/">中文</a>
+      </div>
+    </section>
+  </main>
+
+  <script is:inline>
+    const preferredLocale = navigator.language.toLowerCase().startsWith('zh') ? '/zh/' : '/en/'
+    window.location.replace(preferredLocale)
+  </script>
+</MarketingLayout>

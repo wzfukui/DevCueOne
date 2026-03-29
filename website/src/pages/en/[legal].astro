@@ -1,0 +1,105 @@
+---
+import type { GetStaticPaths } from 'astro'
+import Icon from '../../components/Icon.astro'
+import { defaultOgImage, legalKeywords, localizedAlternates } from '../../data/seo'
+import MarketingLayout from '../../layouts/MarketingLayout.astro'
+
+export const getStaticPaths = (() => {
+  return ['privacy', 'terms'].map((legal) => ({
+    params: { legal }
+  }))
+}) satisfies GetStaticPaths
+
+const legalPages = {
+  privacy: {
+    title: 'Privacy',
+    description: 'Privacy notes for the local DevCue One desktop client.',
+    kicker: 'LOCAL CLIENT POLICY',
+    lead:
+      'DevCue One is a local desktop app. We do not run a hosted user account system, and we do not directly collect personal information from your use of the app.',
+    sections: [
+      {
+        title: 'What stays local',
+        body:
+          'Your local files, project paths, and desktop workflow stay on your machine unless you explicitly connect external tools or providers.'
+      },
+      {
+        title: 'Third-party providers',
+        body:
+          'IDE integrations, TTS, STT, model APIs, or any other providers are chosen and configured by you. Their own privacy policies and data handling rules apply to anything you send to them.'
+      },
+      {
+        title: 'Configuration control',
+        body:
+          'You control which providers are enabled, which credentials are used, and which prompts or files are shared outside your machine.'
+      }
+    ]
+  },
+  terms: {
+    title: 'Terms',
+    description: 'Terms for using the local DevCue One desktop client.',
+    kicker: 'LOCAL CLIENT TERMS',
+    lead:
+      'DevCue One is provided as a local productivity tool for developer workflows. You are responsible for how you configure it, what providers you connect, and what actions you ask it to perform.',
+    sections: [
+      {
+        title: 'Use responsibly',
+        body:
+          'Review generated code, commands, and automation before using them in production, sensitive systems, or regulated environments.'
+      },
+      {
+        title: 'Provider compliance',
+        body:
+          'If you connect IDEs, model APIs, TTS, or STT services, you must follow the applicable terms and policies of those providers.'
+      },
+      {
+        title: 'Local control and risk',
+        body:
+          'You remain responsible for your local environment, credentials, repository access, and any downstream effects caused by commands or integrations you approve.'
+      }
+    ]
+  }
+} as const
+
+const legal = Astro.params.legal as keyof typeof legalPages
+const page = legalPages[legal]
+---
+
+<MarketingLayout
+  lang="en"
+  title={`DevCue One | ${page.title}`}
+  description={page.description}
+  canonicalPath={`/en/${legal}/`}
+  keywords={legalKeywords.en[legal]}
+  alternates={localizedAlternates(`/en/${legal}/`, `/zh/${legal}/`)}
+  ogImagePath={defaultOgImage.path}
+  ogImageAlt={defaultOgImage.alt.en}
+>
+  <div class="fixed inset-0 z-0 pointer-events-none textured-bg"></div>
+  <main class="relative z-10 px-6 py-20">
+    <div class="mx-auto max-w-4xl space-y-10">
+      <a
+        href="/en/"
+        class="inline-flex min-h-11 items-center gap-2 rounded-full bg-surface-container-low px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-secondary transition-colors hover:bg-surface-container-high md:min-h-0 md:rounded-none md:bg-transparent md:px-0 md:py-0 md:text-[10px] md:tracking-[0.24em]"
+      >
+        <Icon name="arrow_back" class="h-4 w-4" />
+        Back to home
+      </a>
+
+      <header class="space-y-5">
+        <p class="font-mono text-[10px] uppercase tracking-[0.24em] text-secondary">{page.kicker}</p>
+        <h1 class="max-w-3xl font-headline text-5xl leading-[1.05] tracking-tight text-primary">{page.title}</h1>
+        <p class="max-w-3xl text-lg leading-relaxed text-on-surface-variant">{page.lead}</p>
+      </header>
+
+      <section class="space-y-6 rounded-[2rem] bg-surface-container-low p-8">
+        {page.sections.map((section) => (
+          <article class="space-y-2 rounded-[1.5rem] bg-surface-container-lowest/80 p-6">
+            <h2 class="font-headline text-2xl text-primary">{section.title}</h2>
+            <p class="leading-relaxed text-on-surface-variant">{section.body}</p>
+          </article>
+        ))}
+      </section>
+    </div>
+  </main>
+</MarketingLayout>

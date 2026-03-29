@@ -1,0 +1,99 @@
+---
+import type { GetStaticPaths } from 'astro'
+import Icon from '../../components/Icon.astro'
+import { defaultOgImage, legalKeywords, localizedAlternates } from '../../data/seo'
+import MarketingLayout from '../../layouts/MarketingLayout.astro'
+
+export const getStaticPaths = (() => {
+  return ['privacy', 'terms'].map((legal) => ({
+    params: { legal }
+  }))
+}) satisfies GetStaticPaths
+
+const legalPages = {
+  privacy: {
+    title: '隐私',
+    description: 'DevCue One 本地桌面客户端的隐私说明。',
+    kicker: '本地客户端隐私说明',
+    lead:
+      'DevCue One 是一个本地桌面应用。我们不运行托管账号系统，也不会直接因为你使用这个应用而收集个人信息。',
+    sections: [
+      {
+        title: '哪些内容默认留在本地',
+        body: '你的本地文件、项目路径和桌面工作流默认都留在你的设备上，除非你主动连接外部工具或服务商。'
+      },
+      {
+        title: '第三方提供方',
+        body: 'IDE 集成、TTS、STT、模型 API 以及其他服务都由你自行选择和配置。你发送给这些提供方的数据，受它们各自的隐私政策和处理规则约束。'
+      },
+      {
+        title: '配置控制权',
+        body: '由你决定启用哪些提供方、使用哪些凭证，以及哪些提示词或文件会离开本机。'
+      }
+    ]
+  },
+  terms: {
+    title: '条款',
+    description: 'DevCue One 本地桌面客户端的使用条款说明。',
+    kicker: '本地客户端使用条款',
+    lead:
+      'DevCue One 是一个服务开发工作流的本地效率工具。如何配置它、连接哪些提供方、以及让它执行什么动作，都由你自己负责。',
+    sections: [
+      {
+        title: '请审慎使用',
+        body: '在生产环境、敏感系统或受监管场景中使用任何生成代码、命令和自动化结果前，都应先自行审阅。'
+      },
+      {
+        title: '遵守提供方条款',
+        body: '如果你连接 IDE、模型 API、TTS 或 STT 服务，需要同时遵守这些提供方各自的条款和政策。'
+      },
+      {
+        title: '本地控制与风险',
+        body: '你的本地环境、凭证、仓库访问权限，以及你批准执行的命令或集成带来的后果，仍由你自己承担和管理。'
+      }
+    ]
+  }
+} as const
+
+const legal = Astro.params.legal as keyof typeof legalPages
+const page = legalPages[legal]
+---
+
+<MarketingLayout
+  lang="zh"
+  title={`DevCue One | ${page.title}`}
+  description={page.description}
+  canonicalPath={`/zh/${legal}/`}
+  keywords={legalKeywords.zh[legal]}
+  alternates={localizedAlternates(`/en/${legal}/`, `/zh/${legal}/`)}
+  ogImagePath={defaultOgImage.path}
+  ogImageAlt={defaultOgImage.alt.zh}
+>
+  <div class="fixed inset-0 z-0 pointer-events-none textured-bg"></div>
+  <main class="relative z-10 px-6 py-20">
+    <div class="mx-auto max-w-4xl space-y-10">
+      <a
+        href="/zh/"
+        class="inline-flex min-h-11 items-center gap-2 rounded-full bg-surface-container-low px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-secondary transition-colors hover:bg-surface-container-high md:min-h-0 md:rounded-none md:bg-transparent md:px-0 md:py-0 md:text-[10px] md:tracking-[0.24em]"
+      >
+        <Icon name="arrow_back" class="h-4 w-4" />
+        返回首页
+      </a>
+
+      <header class="space-y-5">
+        <p class="font-mono text-[10px] uppercase tracking-[0.24em] text-secondary">{page.kicker}</p>
+        <h1 class="max-w-3xl font-headline text-5xl leading-[1.05] tracking-tight text-primary">{page.title}</h1>
+        <p class="max-w-3xl text-lg leading-relaxed text-on-surface-variant">{page.lead}</p>
+      </header>
+
+      <section class="space-y-6 rounded-[2rem] bg-surface-container-low p-8">
+        {page.sections.map((section) => (
+          <article class="space-y-2 rounded-[1.5rem] bg-surface-container-lowest/80 p-6">
+            <h2 class="font-headline text-2xl text-primary">{section.title}</h2>
+            <p class="leading-relaxed text-on-surface-variant">{section.body}</p>
+          </article>
+        ))}
+      </section>
+    </div>
+  </main>
+</MarketingLayout>
