@@ -2,7 +2,7 @@
   "name": "devcueone",
   "productName": "DevCueOne",
   "private": true,
-  "version": "0.4.3",
+  "version": "0.4.4",
   "license": "MIT",
   "engines": {
     "node": ">=22.0.0"

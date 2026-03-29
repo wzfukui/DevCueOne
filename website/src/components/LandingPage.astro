@@ -83,9 +83,8 @@ const bilibiliEmbedUrl =
   'https://player.bilibili.com/player.html?isOutside=true&aid=116304593819654&bvid=BV1oJXVBhESc&cid=37035835777&p=1'
 const bilibiliPageUrl =
   'https://www.bilibili.com/video/BV1oJXVBhESc/?share_source=copy_web&vd_source=54186efa4ddd36c2c793ae694ef28b7f'
-const releaseVersion = '0.4.1'
-const macArm64Url = `${downloadBaseUrl}/DevCue.One-${releaseVersion}-mac-arm64.dmg`
-const macX64Url = `${downloadBaseUrl}/DevCue.One-${releaseVersion}-mac-x64.dmg`
+const macArm64Url = `${downloadBaseUrl}/DevCue.One-mac-arm64.dmg`
+const macX64Url = `${downloadBaseUrl}/DevCue.One-mac-x64.dmg`
 const authorXUrl = 'https://x.com/fukui_wuzhi'
 const authorGithubUrl = 'https://github.com/wzfukui'
 const localeLinks = [
@@ -103,8 +102,8 @@ const downloadOptionsByLocale: Record<Locale, DownloadOption[]> = {
   ]
 }
 const releaseNoteByLocale: Record<Locale, string> = {
-  en: `DMG files hosted on R2. Version ${releaseVersion}.`,
-  zh: `DMG 文件已托管到 R2。版本 ${releaseVersion}。`
+  en: 'Latest DMG files hosted on R2.',
+  zh: '最新 DMG 文件已托管到 R2。'
 }
 const copyByLocale: Record<Locale, LandingCopy> = {
   en: {
@@ -192,7 +191,7 @@ const copyByLocale: Record<Locale, LandingCopy> = {
       }
     ],
     ctaTitle: 'Choose the Mac build that matches your machine.',
-    ctaLead: `DevCue One ${releaseVersion} is ready with separate Apple Silicon and Intel downloads. Enterprise packaging is coming next.`,
+    ctaLead: 'DevCue One is ready with separate Apple Silicon and Intel downloads. Enterprise packaging is coming next.',
     ctaPrimary: 'Download Early Access',
     ctaSecondary: 'Enterprise edition coming soon',
     footerMeta: '© 2026',
@@ -288,7 +287,7 @@ const copyByLocale: Record<Locale, LandingCopy> = {
       }
     ],
     ctaTitle: '选择适合你机器的 Mac 版本。',
-    ctaLead: `DevCue One ${releaseVersion} 已提供 Apple 芯片版和 Intel 版两个下载包，企业版入口也会保留在这里。`,
+    ctaLead: 'DevCue One 已提供 Apple 芯片版和 Intel 版两个下载包，企业版入口也会保留在这里。',
     ctaPrimary: '下载早期访问版',
     ctaSecondary: '企业版即将开放',
     footerMeta: '© 2026',
