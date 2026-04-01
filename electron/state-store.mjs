@@ -62,6 +62,22 @@ function normalizeProjectDeveloperTool(tool) {
   return DEVELOPER_TOOL_DEFINITIONS[tool] ? tool : null
 }
 
+function normalizeDeveloperToolThreadMap(value) {
+  const parsed = parseJson(value, {})
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {}
+  }
+
+  return Object.entries(parsed).reduce((accumulator, [tool, threadId]) => {
+    const normalizedTool = normalizeProjectDeveloperTool(tool)
+    const normalizedThreadId = typeof threadId === 'string' ? threadId.trim() : ''
+    if (normalizedTool && normalizedThreadId) {
+      accumulator[normalizedTool] = normalizedThreadId
+    }
+    return accumulator
+  }, {})
+}
+
 export class AppStateStore {
   constructor({
     databasePath,
@@ -163,8 +179,10 @@ export class AppStateStore {
     this.ensureColumn('project_profiles', 'developer_tool', 'TEXT')
     this.migrateProjectProfilesTable()
     this.ensureColumn('sessions', 'pinned_at', 'TEXT')
+    this.ensureColumn('sessions', 'developer_tool_threads_json', "TEXT NOT NULL DEFAULT '{}'")
     this.ensureColumn('tasks', 'input_preview', "TEXT NOT NULL DEFAULT ''")
     this.importLegacyDatabase()
+    this.migrateSessionThreadStorage()
     this.deduplicateProfilesByWorkingDirectory()
 
     await this.bootstrap()
@@ -836,6 +854,73 @@ export class AppStateStore {
     }
   }
 
+  migrateSessionThreadStorage() {
+    const sessions = this.db
+      .prepare(
+        `
+          SELECT
+            id,
+            codex_thread_id AS codexThreadId,
+            developer_tool_threads_json AS developerToolThreadsJson
+          FROM sessions
+        `,
+      )
+      .all()
+    const selectTaskThreads = this.db.prepare(
+      `
+        SELECT
+          provider,
+          codex_thread_id AS codexThreadId
+        FROM tasks
+        WHERE session_id = ? AND codex_thread_id IS NOT NULL AND codex_thread_id != ''
+        ORDER BY created_at DESC
+      `,
+    )
+    const updateSession = this.db.prepare(
+      `
+        UPDATE sessions
+        SET
+          codex_thread_id = ?,
+          developer_tool_threads_json = ?,
+          updated_at = ?
+        WHERE id = ?
+      `,
+    )
+
+    for (const session of sessions) {
+      const nextThreadMap = normalizeDeveloperToolThreadMap(session.developerToolThreadsJson)
+      for (const task of selectTaskThreads.all(session.id)) {
+        const normalizedTool = normalizeProjectDeveloperTool(task.provider)
+        const normalizedThreadId =
+          typeof task.codexThreadId === 'string' ? task.codexThreadId.trim() : ''
+        if (!normalizedTool || !normalizedThreadId || nextThreadMap[normalizedTool]) {
+          continue
+        }
+        nextThreadMap[normalizedTool] = normalizedThreadId
+      }
+
+      const legacyCodexThreadId =
+        typeof session.codexThreadId === 'string' ? session.codexThreadId.trim() : ''
+      if (legacyCodexThreadId && !nextThreadMap.codex) {
+        nextThreadMap.codex = legacyCodexThreadId
+      }
+
+      const previousSerializedThreadMap = JSON.stringify(
+        normalizeDeveloperToolThreadMap(session.developerToolThreadsJson),
+      )
+      const nextSerializedThreadMap = JSON.stringify(nextThreadMap)
+      const nextCodexThreadId = nextThreadMap.codex ?? null
+      if (
+        previousSerializedThreadMap === nextSerializedThreadMap &&
+        (legacyCodexThreadId || null) === nextCodexThreadId
+      ) {
+        continue
+      }
+
+      updateSession.run(nextCodexThreadId, nextSerializedThreadMap, nowIso(), session.id)
+    }
+  }
+
   createProfile(profileInput) {
     const normalizedWorkingDirectory =
       profileInput.workingDirectory?.trim() || this.defaultSettings.workingDirectory
@@ -896,10 +981,57 @@ export class AppStateStore {
       return this.createProfile(profileInput)
     }
 
+    const nextWorkingDirectory = profileInput.workingDirectory?.trim() || existing.workingDirectory
+    const conflictingProfile = this.findProfileByWorkingDirectory(nextWorkingDirectory, existing.id)
+    if (conflictingProfile) {
+      const mergedProfile = {
+        ...conflictingProfile,
+        name: profileInput.name?.trim() || conflictingProfile.name,
+        workingDirectory: nextWorkingDirectory,
+        developerTool:
+          profileInput.developerTool === undefined
+            ? conflictingProfile.developerTool || existing.developerTool
+            : normalizeProjectDeveloperTool(profileInput.developerTool),
+        defaultPromptContext:
+          profileInput.defaultPromptContext?.trim() ?? conflictingProfile.defaultPromptContext,
+        usageNotes: profileInput.usageNotes?.trim() ?? conflictingProfile.usageNotes,
+        updatedAt: nowIso(),
+        lastUsedAt:
+          [conflictingProfile.lastUsedAt, existing.lastUsedAt].filter(Boolean).sort().at(-1) || null,
+      }
+
+      this.db
+        .prepare(`
+          UPDATE project_profiles
+          SET
+            name = ?,
+            working_directory = ?,
+            developer_tool = ?,
+            default_prompt_context = ?,
+            usage_notes = ?,
+            updated_at = ?,
+            last_used_at = ?
+          WHERE id = ?
+        `)
+        .run(
+          mergedProfile.name,
+          mergedProfile.workingDirectory,
+          mergedProfile.developerTool,
+          mergedProfile.defaultPromptContext,
+          mergedProfile.usageNotes,
+          mergedProfile.updatedAt,
+          mergedProfile.lastUsedAt,
+          conflictingProfile.id,
+        )
+      this.rebindSessionsToProfile(conflictingProfile.id, existing.id)
+      this.db.prepare('DELETE FROM project_profiles WHERE id = ?').run(existing.id)
+      return this.getProfile(conflictingProfile.id)
+    }
+
     const updated = {
       ...existing,
       name: profileInput.name?.trim() || existing.name,
-      workingDirectory: profileInput.workingDirectory?.trim() || existing.workingDirectory,
+      workingDirectory: nextWorkingDirectory,
       developerTool:
         profileInput.developerTool === undefined
           ? existing.developerTool
@@ -1029,6 +1161,7 @@ export class AppStateStore {
       titleSource,
       boundProfileId,
       codexThreadId: null,
+      developerToolThreads: {},
       pinnedAt: null,
       lastMessagePreview: '',
       unreadEventCount: 0,
@@ -1049,11 +1182,12 @@ export class AppStateStore {
           last_activity_at,
           bound_profile_id,
           codex_thread_id,
+          developer_tool_threads_json,
           last_message_preview,
           unread_event_count,
           archived_at,
           pinned_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         session.id,
@@ -1064,6 +1198,7 @@ export class AppStateStore {
         session.lastActivityAt,
         session.boundProfileId,
         session.codexThreadId,
+        JSON.stringify(session.developerToolThreads),
         session.lastMessagePreview,
         session.unreadEventCount,
         session.archivedAt,
@@ -1093,6 +1228,7 @@ export class AppStateStore {
           s.last_activity_at AS lastActivityAt,
           s.bound_profile_id AS boundProfileId,
           s.codex_thread_id AS codexThreadId,
+          s.developer_tool_threads_json AS developerToolThreadsJson,
           s.pinned_at AS pinnedAt,
           s.last_message_preview AS lastMessagePreview,
           s.unread_event_count AS unreadEventCount,
@@ -1105,7 +1241,17 @@ export class AppStateStore {
       `)
       .get(sessionId)
 
-    return row ?? null
+    if (!row) {
+      return null
+    }
+
+    const developerToolThreads = normalizeDeveloperToolThreadMap(row.developerToolThreadsJson)
+    const { developerToolThreadsJson, ...session } = row
+    return {
+      ...session,
+      codexThreadId: developerToolThreads.codex ?? session.codexThreadId ?? null,
+      developerToolThreads,
+    }
   }
 
   listSessions() {
@@ -1121,6 +1267,7 @@ export class AppStateStore {
           s.last_activity_at AS lastActivityAt,
           s.bound_profile_id AS boundProfileId,
           s.codex_thread_id AS codexThreadId,
+          s.developer_tool_threads_json AS developerToolThreadsJson,
           s.pinned_at AS pinnedAt,
           s.last_message_preview AS lastMessagePreview,
           s.unread_event_count AS unreadEventCount,
@@ -1148,10 +1295,16 @@ export class AppStateStore {
           s.created_at DESC
       `)
       .all()
-      .map((row) => ({
-        ...row,
-        isActive: row.id === activeSessionId,
-      }))
+      .map((row) => {
+        const developerToolThreads = normalizeDeveloperToolThreadMap(row.developerToolThreadsJson)
+        const { developerToolThreadsJson, ...session } = row
+        return {
+          ...session,
+          codexThreadId: developerToolThreads.codex ?? session.codexThreadId ?? null,
+          developerToolThreads,
+          isActive: session.id === activeSessionId,
+        }
+      })
   }
 
   renameSession(sessionId, title) {
@@ -1181,10 +1334,42 @@ export class AppStateStore {
     return this.getSession(sessionId)
   }
 
-  updateSessionThread(sessionId, threadId) {
+  updateSessionThread(sessionId, tool, threadId) {
+    const normalizedTool = normalizeProjectDeveloperTool(tool)
+    if (!normalizedTool) {
+      return
+    }
+
+    const session = this.getSession(sessionId)
+    if (!session) {
+      return
+    }
+
+    const developerToolThreads = {
+      ...(session.developerToolThreads ?? {}),
+    }
+    const normalizedThreadId = typeof threadId === 'string' ? threadId.trim() : ''
+    if (normalizedThreadId) {
+      developerToolThreads[normalizedTool] = normalizedThreadId
+    } else {
+      delete developerToolThreads[normalizedTool]
+    }
+
     this.db
-      .prepare('UPDATE sessions SET codex_thread_id = ?, updated_at = ? WHERE id = ?')
-      .run(threadId, nowIso(), sessionId)
+      .prepare(`
+        UPDATE sessions
+        SET
+          codex_thread_id = ?,
+          developer_tool_threads_json = ?,
+          updated_at = ?
+        WHERE id = ?
+      `)
+      .run(
+        developerToolThreads.codex ?? null,
+        JSON.stringify(developerToolThreads),
+        nowIso(),
+        sessionId,
+      )
   }
 
   setSessionPinned(sessionId, pinned) {

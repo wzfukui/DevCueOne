@@ -213,6 +213,56 @@ test('creating a profile with an existing working directory reuses the original 
   )
 })
 
+test('updating a profile into an existing working directory merges it into the canonical profile', async () => {
+  const { store, profileA, profileB } = await createStoreFixture()
+  const state = store.getAppState()
+  const canonicalProfile = state.profiles.find((profile) => profile.workingDirectory === profileA)
+  const duplicateProfile = state.profiles.find((profile) => profile.workingDirectory === profileB)
+  assert.ok(canonicalProfile)
+  assert.ok(duplicateProfile)
+
+  const activeSessionId = state.activeSessionId
+  assert.ok(activeSessionId)
+  store.bindProfileToSession(activeSessionId, duplicateProfile.id)
+
+  const savedProfile = store.saveProfile({
+    id: duplicateProfile.id,
+    name: 'Merged Project A',
+    workingDirectory: profileA,
+    developerTool: 'claude_code',
+  })
+
+  assert.equal(savedProfile.id, canonicalProfile.id)
+  assert.equal(savedProfile.name, 'Merged Project A')
+  assert.equal(savedProfile.developerTool, 'claude_code')
+  assert.equal(
+    store.getAppState().profiles.filter((profile) => profile.workingDirectory === profileA).length,
+    1,
+  )
+
+  const detail = store.getSessionDetail(activeSessionId)
+  assert.ok(detail)
+  assert.equal(detail.boundProfile?.id, canonicalProfile.id)
+  assert.equal(store.getProfile(duplicateProfile.id), null)
+})
+
+test('session threads are tracked separately per developer tool', async () => {
+  const { store } = await createStoreFixture()
+  const sessionId = store.getAppState().activeSessionId
+  assert.ok(sessionId)
+
+  store.updateSessionThread(sessionId, 'codex', 'codex-thread-1')
+  store.updateSessionThread(sessionId, 'claude_code', 'claude-thread-1')
+
+  const session = store.getSession(sessionId)
+  assert.ok(session)
+  assert.equal(session.codexThreadId, 'codex-thread-1')
+  assert.deepEqual(session.developerToolThreads, {
+    claude_code: 'claude-thread-1',
+    codex: 'codex-thread-1',
+  })
+})
+
 test('listActiveTasks only returns queued and running tasks', async () => {
   const { store } = await createStoreFixture()
   const activeSessionId = store.getAppState().activeSessionId

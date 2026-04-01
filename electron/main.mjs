@@ -2092,10 +2092,14 @@ async function runFakeCodexTurn(payload, settings, sessionDetail) {
   const combined = [payload.inputText, payload.pendingText].filter(Boolean).join('\n')
   const isEnglish = settings.workingLanguage.toLowerCase().startsWith('en')
   const workingDirectory = payload.workingDirectory || settings.workingDirectory
+  const sessionThreadId = getSessionThreadIdForDeveloperTool(
+    sessionDetail.session,
+    settings.developerTool,
+  )
 
   if (/need more info|需要更多信息|缺少|missing/i.test(combined)) {
     return {
-      threadId: sessionDetail.session.codexThreadId ?? null,
+      threadId: sessionThreadId,
       status: 'need_input',
       backend: 'fake',
       spokenReply: isEnglish ? 'I need a bit more detail first.' : '我还需要一点更精确的信息。',
@@ -2110,7 +2114,7 @@ async function runFakeCodexTurn(payload, settings, sessionDetail) {
 
   if (/fail|error|失败|报错/i.test(combined)) {
     return {
-      threadId: sessionDetail.session.codexThreadId ?? null,
+      threadId: sessionThreadId,
       status: 'failed',
       backend: 'fake',
       spokenReply: isEnglish ? 'The fake runner reports a failure.' : 'Fake runner 模拟了一次失败。',
@@ -2123,7 +2127,7 @@ async function runFakeCodexTurn(payload, settings, sessionDetail) {
     }
   }
 
-  const threadId = sessionDetail.session.codexThreadId || `fake-thread-${sessionDetail.session.id.slice(0, 8)}`
+  const threadId = sessionThreadId || `fake-thread-${sessionDetail.session.id.slice(0, 8)}`
   return {
     threadId,
     status: 'done',
@@ -2158,7 +2162,7 @@ async function runCodexCliTurn(runtime, payload, settings, sessionDetail) {
     settings.codexPath?.trim() ||
     defaultCommandForDeveloperTool('codex')
   const workingDirectory = payload.workingDirectory?.trim() || settings.workingDirectory || process.cwd()
-  const sessionThreadId = sessionDetail.session.codexThreadId?.trim()
+  const sessionThreadId = getSessionThreadIdForDeveloperTool(sessionDetail.session, 'codex')
   const shouldResume = Boolean(sessionThreadId)
   const outputFile = path.join(app.getPath('temp'), `voice-agent-${randomUUID()}.json`)
   const schemaPath = path.join(__dirname, 'codex-output-schema.json')
@@ -2451,11 +2455,32 @@ async function runPrintModeDeveloperToolTurn({
   }
 }
 
+function getSessionThreadIdForDeveloperTool(session, tool = 'codex') {
+  if (!session) {
+    return null
+  }
+
+  const normalizedTool = typeof tool === 'string' ? tool.trim() : ''
+  const mappedThreadId =
+    typeof session.developerToolThreads?.[normalizedTool] === 'string'
+      ? session.developerToolThreads[normalizedTool].trim()
+      : ''
+  if (mappedThreadId) {
+    return mappedThreadId
+  }
+
+  if (normalizedTool === 'codex' && typeof session.codexThreadId === 'string') {
+    return session.codexThreadId.trim() || null
+  }
+
+  return null
+}
+
 async function runClaudeCodeTurn(runtime, payload, settings, sessionDetail) {
   const workingDirectory = payload.workingDirectory?.trim() || settings.workingDirectory || process.cwd()
   const sessionThreadId =
-    supportsDeveloperToolResume('claude_code') && sessionDetail.session.codexThreadId?.trim()
-      ? sessionDetail.session.codexThreadId.trim()
+    supportsDeveloperToolResume('claude_code')
+      ? getSessionThreadIdForDeveloperTool(sessionDetail.session, 'claude_code')
       : null
   const schemaJson = await fs.readFile(path.join(__dirname, 'codex-output-schema.json'), 'utf8')
   const prompt = buildPrompt({
@@ -2492,8 +2517,8 @@ async function runClaudeCodeTurn(runtime, payload, settings, sessionDetail) {
 async function runCursorCliTurn(runtime, payload, settings, sessionDetail) {
   const workingDirectory = payload.workingDirectory?.trim() || settings.workingDirectory || process.cwd()
   const sessionThreadId =
-    supportsDeveloperToolResume('cursor_cli') && sessionDetail.session.codexThreadId?.trim()
-      ? sessionDetail.session.codexThreadId.trim()
+    supportsDeveloperToolResume('cursor_cli')
+      ? getSessionThreadIdForDeveloperTool(sessionDetail.session, 'cursor_cli')
       : null
   const prompt = buildPrompt({
     spokenText: payload.inputText,
@@ -2522,8 +2547,8 @@ async function runCursorCliTurn(runtime, payload, settings, sessionDetail) {
 async function runGeminiCliTurn(runtime, payload, settings, sessionDetail) {
   const workingDirectory = payload.workingDirectory?.trim() || settings.workingDirectory || process.cwd()
   const sessionThreadId =
-    supportsDeveloperToolResume('gemini_cli') && sessionDetail.session.codexThreadId?.trim()
-      ? sessionDetail.session.codexThreadId.trim()
+    supportsDeveloperToolResume('gemini_cli')
+      ? getSessionThreadIdForDeveloperTool(sessionDetail.session, 'gemini_cli')
       : null
   const prompt = buildPrompt({
     spokenText: payload.inputText,
@@ -2559,8 +2584,8 @@ async function runGeminiCliTurn(runtime, payload, settings, sessionDetail) {
 async function runQwenCliTurn(runtime, payload, settings, sessionDetail) {
   const workingDirectory = payload.workingDirectory?.trim() || settings.workingDirectory || process.cwd()
   const sessionThreadId =
-    supportsDeveloperToolResume('qwen_cli') && sessionDetail.session.codexThreadId?.trim()
-      ? sessionDetail.session.codexThreadId.trim()
+    supportsDeveloperToolResume('qwen_cli')
+      ? getSessionThreadIdForDeveloperTool(sessionDetail.session, 'qwen_cli')
       : null
   const prompt = buildPrompt({
     spokenText: payload.inputText,
@@ -2708,7 +2733,7 @@ async function processTextTurn(runtime) {
   )
 
   if (result.threadId) {
-    stateStore.updateSessionThread(runtime.sessionId, result.threadId)
+    stateStore.updateSessionThread(runtime.sessionId, result.backend, result.threadId)
   }
 
   stateStore.addMessage({

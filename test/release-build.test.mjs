@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -10,8 +10,10 @@ import {
   parseCodeSigningIdentities,
   parseOptions,
   resolveArchitectureFlags,
+  resolveGenericMacArtifactCopies,
   resolveSigningEnvironment,
   sanitizeCodeSigningIdentity,
+  syncGenericMacArtifacts,
 } from '../scripts/release-build.mjs'
 
 test('release helper parses platform and skip flags', () => {
@@ -49,6 +51,43 @@ test('release helper defaults mac builds to arm64 and x64', () => {
 test('release helper respects explicit architecture selection', () => {
   assert.deepEqual(resolveArchitectureFlags(['--mac'], ['x64']), ['--x64'])
   assert.deepEqual(resolveArchitectureFlags(['--win'], []), [])
+})
+
+test('release helper derives generic mac artifact aliases from the versioned names', () => {
+  assert.deepEqual(resolveGenericMacArtifactCopies('0.4.4'), [
+    {
+      sourceFileName: 'DevCue.One-0.4.4-mac-arm64.dmg',
+      targetFileName: 'DevCue.One-mac-arm64.dmg',
+    },
+    {
+      sourceFileName: 'DevCue.One-0.4.4-mac-arm64.zip',
+      targetFileName: 'DevCue.One-mac-arm64.zip',
+    },
+    {
+      sourceFileName: 'DevCue.One-0.4.4-mac-x64.dmg',
+      targetFileName: 'DevCue.One-mac-x64.dmg',
+    },
+    {
+      sourceFileName: 'DevCue.One-0.4.4-mac-x64.zip',
+      targetFileName: 'DevCue.One-mac-x64.zip',
+    },
+  ])
+})
+
+test('release helper copies generic mac artifacts for website downloads', async () => {
+  const releaseDir = mkdtempSync(path.join(tmpdir(), 'release-artifacts-'))
+  const versionedDmgPath = path.join(releaseDir, 'DevCue.One-0.4.4-mac-arm64.dmg')
+  writeFileSync(versionedDmgPath, 'arm64-dmg')
+
+  const copiedArtifacts = await syncGenericMacArtifacts(releaseDir, '0.4.4')
+  const genericDmgPath = path.join(releaseDir, 'DevCue.One-mac-arm64.dmg')
+
+  assert.equal(existsSync(genericDmgPath), true)
+  assert.equal(readFileSync(genericDmgPath, 'utf8'), 'arm64-dmg')
+  assert.deepEqual(
+    copiedArtifacts.map((artifact) => path.basename(artifact.targetPath)),
+    ['DevCue.One-mac-arm64.dmg'],
+  )
 })
 
 test('release helper sanitizes Developer ID identity names', () => {

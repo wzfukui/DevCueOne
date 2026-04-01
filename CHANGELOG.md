@@ -4,6 +4,17 @@ All notable product-facing changes in DevCue One should be recorded in this file
 
 The format is intentionally lightweight and release-oriented.
 
+## 0.4.5 - 2026-04-01
+
+Patch release for runtime-state and release-flow fixes.
+
+Highlights:
+
+- profile updates now merge duplicate working directories instead of creating runtime duplicate profiles
+- developer tool resume threads are now tracked per tool, so switching between Codex, Claude Code, Cursor CLI, Gemini CLI, and Qwen CLI no longer cross-wires session resumes
+- macOS release automation now refreshes the generic DMG and ZIP aliases used by the website download links
+- dual-arch signed packaging was rerun for the current `one.devcue.app` identity
+
 ## 0.4.3 - 2026-03-29
 
 Patch release for the final DevCueOne identity cutover.

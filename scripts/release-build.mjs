@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { copyFile, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
@@ -68,6 +68,15 @@ export function resolveArchitectureFlags(
 
 export function sanitizeCodeSigningIdentity(identity) {
   return identity.replace(/^Developer ID Application:\s*/, '').trim()
+}
+
+export function resolveGenericMacArtifactCopies(version) {
+  return ['arm64', 'x64'].flatMap((arch) =>
+    ['dmg', 'zip'].map((ext) => ({
+      sourceFileName: `DevCue.One-${version}-mac-${arch}.${ext}`,
+      targetFileName: `DevCue.One-mac-${arch}.${ext}`,
+    })),
+  )
 }
 
 export function parseCodeSigningIdentities(output) {
@@ -280,6 +289,34 @@ async function collectArtifacts(rootDir) {
   return files.flat().sort((left, right) => left.relativePath.localeCompare(right.relativePath))
 }
 
+async function readPackageVersion() {
+  const packageJson = JSON.parse(await readFile(path.join(PROJECT_ROOT, 'package.json'), 'utf8'))
+  return String(packageJson.version || '').trim()
+}
+
+export async function syncGenericMacArtifacts(rootDir, version) {
+  if (!version) {
+    return []
+  }
+
+  const copiedArtifacts = []
+  for (const artifact of resolveGenericMacArtifactCopies(version)) {
+    const sourcePath = path.join(rootDir, artifact.sourceFileName)
+    if (!existsSync(sourcePath)) {
+      continue
+    }
+
+    const targetPath = path.join(rootDir, artifact.targetFileName)
+    await copyFile(sourcePath, targetPath)
+    copiedArtifacts.push({
+      sourcePath,
+      targetPath,
+    })
+  }
+
+  return copiedArtifacts
+}
+
 async function main() {
   const options = parseOptions(process.argv.slice(2))
   if (options.help) {
@@ -306,6 +343,7 @@ async function main() {
   if (!existsSync(builderBin)) {
     throw new Error('electron-builder is not installed. Run npm install first.')
   }
+  const packageVersion = await readPackageVersion()
 
   const builderArgs = ['--config', 'electron-builder.yml', '--publish', 'never']
   if (options.dir) {
@@ -338,6 +376,10 @@ async function main() {
   await runCommand(builderBin, builderArgs, {
     env: builderEnv,
   })
+
+  if (platformFlags.includes('--mac')) {
+    await syncGenericMacArtifacts(RELEASE_DIR, packageVersion)
+  }
 
   const artifacts = await collectArtifacts(RELEASE_DIR)
   if (artifacts.length === 0) {
