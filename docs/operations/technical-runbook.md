@@ -17,6 +17,7 @@ The current desktop app is centered around:
 - multi-session voice-driven development
 - per-session project binding
 - selectable developer-tool execution with runtime detection
+- project-level tool overrides that still inherit executable-path ownership from global settings
 - background task execution with recovery
 - local acknowledgement assets plus browser/cloud playback fallback
 - startup skeleton gating before onboarding is shown
@@ -61,7 +62,7 @@ Responsibilities:
 - window lifecycle and Electron permission handling
 - IPC surface for state, sessions, profiles, voice turns, text turns, playback, and config tests
 - task queue, cancellation, orphan-task recovery, and local routing
-- developer-tool adapter dispatch and executable detection
+- developer-tool adapter dispatch, per-tool runtime session tracking, and executable detection
 - STT runtime calls
 - cloud TTS synthesis for supported providers
 - acknowledgement asset resolution from the local pack
@@ -103,7 +104,8 @@ Responsibilities:
 
 - declare supported developer tools and labels
 - provide default executable names
-- probe local command/path availability
+- probe local command/path availability and prefer the best available executable for the selected tool
+- normalize backend envelopes, mixed text plus trailing JSON, and plain-text fallbacks into the shared schema
 - normalize legacy Codex-only settings into the current generic model
 
 ## 4. Key Runtime Paths
@@ -207,8 +209,8 @@ When a bug report comes in, verify these first:
 - whether the left filter is on `All` or `Current Project`
 - whether STT/TTS config tests pass in the right-side inspector
 - which developer tool / execution mode is selected in global settings
-- whether the configured executable path was auto-detected or filled manually
-- whether diagnostics show a session ID, runtime session ID, thread ID, active task, or recent events
+- whether the configured executable path matches the resolved runtime path shown in settings
+- whether diagnostics show a session ID, the active backend's runtime session ID, an active task, or recent events
 
 ### 7.2 Event Log Interpretation
 
@@ -354,6 +356,7 @@ Check:
 - diagnostics for `task_started`, `task_result`, or `task_recovered`
 - whether global task concurrency is too low
 - whether the selected developer tool executable exists
+- whether the resolved runtime path points to the binary version you expect instead of an older GUI `PATH` hit
 - whether the selected developer tool is logged in and allowed to access the working directory
 
 ### 8.6 Wrong Project Context
@@ -371,7 +374,7 @@ When handing this project to another engineer, make sure they understand:
 - the product is session-centric, not project-centric
 - only the active session captures voice
 - only the active workspace speaks results
-- the selected developer tool and execution mode live in global settings
+- project profiles only choose the tool override; executable paths and execution mode live in global settings
 - acknowledgement assets are local files, not live TTS
 - STT/TTS config libraries are editable from the right-side inspector
 - the session filter `All / Current Project` changes list visibility only

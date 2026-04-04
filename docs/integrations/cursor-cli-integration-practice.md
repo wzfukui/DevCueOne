@@ -86,7 +86,7 @@ Product implication:
 
 Product implication:
 
-- The app can keep reusing the existing shared `codexThreadId` field for Cursor session persistence.
+- The app persists Cursor runtime session IDs in `sessions.developer_tool_threads_json` under the `cursor_cli` key.
 
 ### 4. Bypass Toggle Mapping
 
@@ -122,6 +122,7 @@ The integration was updated with the following decisions:
 5. Keep `--resume <session-id>` when a stored session exists.
 6. Update the settings runtime note so the actual behavior is visible in the UI.
 7. Add automated tests for Cursor argument mapping and real output-envelope parsing.
+8. Reuse the shared runtime executable resolver so the desktop app launches the preferred Cursor binary from the global tool-path setting instead of trusting GUI `PATH` ordering.
 
 ## Sanitized Invocation Mapping
 

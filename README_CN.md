@@ -25,6 +25,7 @@ DevCue One 是一个面向开发者的桌面语音工作台。它将多会话管
 
 - 每条会话绑定一个项目配置
 - 项目配置保存工作目录、默认提示上下文和使用备注
+- 项目可单独覆盖开发工具选择，但不单独维护可执行文件路径
 - 会话切换时自动恢复绑定的项目背景
 
 ### 语音与文本
@@ -43,6 +44,11 @@ DevCue One 是一个面向开发者的桌面语音工作台。它将多会话管
 - Cursor CLI
 - Gemini CLI
 - Qwen Code
+
+当前路径模型：
+
+- 全局设置会分别保存每个开发工具的可执行文件路径，并显示桌面端实际运行时解析到的真实路径
+- 项目层只选择工具名称，不再单独维护一份路径
 
 ### STT / TTS
 
@@ -88,6 +94,7 @@ npm run dev:desktop
 2. 授予麦克风权限
 3. 配置 STT / TTS 或暂时切到 `fake`
 4. 配置开发工具 CLI
+5. 在全局设置里确认“实际运行路径”就是你希望桌面端真正调用的那份二进制
 
 ## 常用命令
 
@@ -105,6 +112,8 @@ npm run release:mac:local
 
 - 英文主 README：[`README.md`](./README.md)
 - 技术运行手册：`docs/operations/technical-runbook.md`
+- Turn Pipeline 技术说明：`docs/architecture/turn-pipeline-and-project-profile-context.md`
+- Gemini CLI 对接说明：`docs/integrations/gemini-cli-integration-practice.md`
 - 打包自动化：`docs/operations/release-automation.md`
 - macOS 签名与公证：`docs/operations/macos-signing-and-notarization.md`
 - 产品设计归档：`docs/product/phase-2/product-design.md`

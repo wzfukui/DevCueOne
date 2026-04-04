@@ -335,6 +335,12 @@ function defaultExecutableNameForDeveloperTool(tool: DeveloperTool) {
   }
 }
 
+function normalizeDeveloperToolValue(value: string | null | undefined): DeveloperTool | null {
+  return DEVELOPER_TOOL_OPTIONS.some((option) => option.value === value)
+    ? (value as DeveloperTool)
+    : null
+}
+
 function normalizeRendererSettings(
   settings?: Partial<DesktopSettings> | null,
 ): DesktopSettings {
@@ -1748,6 +1754,7 @@ function App() {
   const autoStartAppliedRef = useRef(false)
   const transcriptListRef = useRef<HTMLDivElement | null>(null)
   const handledVoiceIntentEventIdsRef = useRef(new Set<string>())
+  const consumedContextDraftsRef = useRef<Record<string, string>>({})
   const isSavingSessionRenameRef = useRef(false)
   const skipNextSessionRenameSaveRef = useRef(false)
   const previousSessionSummariesRef = useRef<SessionSummary[] | null>(null)
@@ -3397,6 +3404,54 @@ function App() {
       [sessionId]: value,
     }))
   }, [])
+  const markSessionContextDraftConsumed = useCallback((sessionId: string, value: string) => {
+    const nextValue = value.trim()
+    if (!sessionId || !nextValue) {
+      return
+    }
+
+    consumedContextDraftsRef.current[sessionId] = nextValue
+  }, [])
+  const clearSessionContextDraftConsumed = useCallback((sessionId: string, value?: string) => {
+    if (!sessionId) {
+      return
+    }
+
+    const currentValue = consumedContextDraftsRef.current[sessionId]
+    if (!currentValue) {
+      return
+    }
+
+    if (typeof value === 'string' && value.trim() && currentValue !== value.trim()) {
+      return
+    }
+
+    delete consumedContextDraftsRef.current[sessionId]
+  }, [])
+  const readSessionContextDraftForSubmit = useCallback(
+    (sessionId: string) => {
+      const rawValue = (contextDrafts[sessionId] ?? '').trim()
+      if (!rawValue) {
+        return {
+          rawValue: '',
+          submitValue: '',
+        }
+      }
+
+      if (consumedContextDraftsRef.current[sessionId] === rawValue) {
+        return {
+          rawValue,
+          submitValue: '',
+        }
+      }
+
+      return {
+        rawValue,
+        submitValue: rawValue,
+      }
+    },
+    [contextDrafts],
+  )
   const restoreSessionMessageDraftIfEmpty = useCallback(
     (sessionId: string, value: string) => {
       const nextValue = value.trim()
@@ -3428,6 +3483,8 @@ function App() {
         if ((current[sessionId] ?? '').trim()) {
           return current
         }
+
+        delete consumedContextDraftsRef.current[sessionId]
 
         return {
           ...current,
@@ -3594,7 +3651,8 @@ function App() {
         return
       }
 
-      const stagedContext = contextDrafts[sessionId]?.trim() || ''
+      const { rawValue: rawStagedContext, submitValue: stagedContext } =
+        readSessionContextDraftForSubmit(sessionId)
 
       try {
         setLastError('')
@@ -3641,8 +3699,11 @@ function App() {
 
         const audioBase64 = await blobToBase64(uploadBlob)
 
-        if (stagedContext) {
+        if (rawStagedContext) {
           setSessionContextDraft(sessionId, '')
+        }
+        if (stagedContext) {
+          markSessionContextDraftConsumed(sessionId, stagedContext)
         }
 
         const result = await desktopAgent.submitVoiceTurn({
@@ -3652,13 +3713,6 @@ function App() {
           pendingText: stagedContext,
           captureMode: activeVoiceInputMode,
         })
-
-        if (
-          stagedContext &&
-          (result.status === 'failed' || (result.status === 'cancelled' && result.feedbackTone === 'error'))
-        ) {
-          restoreSessionContextDraftIfEmpty(sessionId, stagedContext)
-        }
 
         if (result.status === 'failed') {
           setLastErrorForSession(sessionId, result.uiReply)
@@ -3689,11 +3743,22 @@ function App() {
               )
           }
         } else {
+          if (rawStagedContext) {
+            setSessionContextDraft(sessionId, '')
+          }
           setActivityHintForSession(sessionId, result.nextActionHint || '语音任务已完成。')
         }
 
-        await playTurnResultWithDedup(result, 'submit_return')
+        try {
+          await playTurnResultWithDedup(result, 'submit_return')
+        } catch {
+          setActivityHintForSession(
+            sessionId,
+            `${result.nextActionHint || '语音任务已完成。'}（结果播报失败）`,
+          )
+        }
       } catch (error) {
+        clearSessionContextDraftConsumed(sessionId, stagedContext)
         restoreSessionContextDraftIfEmpty(sessionId, stagedContext)
         const message =
           error instanceof Error ? error.message : '语音任务执行失败。'
@@ -3704,7 +3769,6 @@ function App() {
     },
     [
       clearStage,
-      contextDrafts,
       desktopAgent,
       hasDesktopApi,
       markStage,
@@ -3713,7 +3777,10 @@ function App() {
       logClientEvent,
       playRecognitionChime,
       playTurnResultWithDedup,
+      clearSessionContextDraftConsumed,
       restoreSessionContextDraftIfEmpty,
+      readSessionContextDraftForSubmit,
+      markSessionContextDraftConsumed,
       selectedSttConfig?.kind,
       setActivityHintForSession,
       setLastErrorForSession,
@@ -4677,7 +4744,8 @@ function App() {
     }
 
     const stagedMessage = currentMessageDraft.trim()
-    const stagedContext = currentContextDraft.trim()
+    const { rawValue: rawStagedContext, submitValue: stagedContext } =
+      readSessionContextDraftForSubmit(activeSessionId)
 
     try {
       setLastError('')
@@ -4685,8 +4753,11 @@ function App() {
       markStage(activeSessionId, 'submitting')
       setSessionMessageDraft(activeSessionId, '')
 
-      if (stagedContext) {
+      if (rawStagedContext) {
         setSessionContextDraft(activeSessionId, '')
+      }
+      if (stagedContext) {
+        markSessionContextDraftConsumed(activeSessionId, stagedContext)
       }
 
       const result = await desktopAgent.submitTextTurn({
@@ -4698,13 +4769,21 @@ function App() {
       if (result.status === 'failed' || result.status === 'cancelled') {
         restoreSessionMessageDraftIfEmpty(activeSessionId, stagedMessage)
       }
-      if (stagedContext && (result.status === 'failed' || result.status === 'cancelled')) {
-        restoreSessionContextDraftIfEmpty(activeSessionId, stagedContext)
+      if (result.status === 'done' && rawStagedContext) {
+        setSessionContextDraft(activeSessionId, '')
       }
       setActivityHintForSession(activeSessionId, result.nextActionHint || '文字任务已完成。')
-      await playTurnResultWithDedup(result, 'submit_return')
+      try {
+        await playTurnResultWithDedup(result, 'submit_return')
+      } catch {
+        setActivityHintForSession(
+          activeSessionId,
+          `${result.nextActionHint || '文字任务已完成。'}（结果播报失败）`,
+        )
+      }
     } catch (error) {
       restoreSessionMessageDraftIfEmpty(activeSessionId, stagedMessage)
+      clearSessionContextDraftConsumed(activeSessionId, stagedContext)
       restoreSessionContextDraftIfEmpty(activeSessionId, stagedContext)
       setLastErrorForSession(
         activeSessionId,
@@ -4716,12 +4795,14 @@ function App() {
   }, [
     activeSessionId,
     clearStage,
-    currentContextDraft,
     currentMessageDraft,
     desktopAgent,
     hasDesktopApi,
     markStage,
     playTurnResultWithDedup,
+    clearSessionContextDraftConsumed,
+    readSessionContextDraftForSubmit,
+    markSessionContextDraftConsumed,
     restoreSessionMessageDraftIfEmpty,
     restoreSessionContextDraftIfEmpty,
     setActivityHintForSession,
@@ -4736,15 +4817,19 @@ function App() {
     }
 
     const stagedMessage = currentMessageDraft.trim()
-    const stagedContext = currentContextDraft.trim()
+    const { rawValue: rawStagedContext, submitValue: stagedContext } =
+      readSessionContextDraftForSubmit(activeSessionId)
 
     try {
       setLastError('')
       setActivityHintForSession(activeSessionId, '正在加入任务队列。')
       setSessionMessageDraft(activeSessionId, '')
 
-      if (stagedContext) {
+      if (rawStagedContext) {
         setSessionContextDraft(activeSessionId, '')
+      }
+      if (stagedContext) {
+        markSessionContextDraftConsumed(activeSessionId, stagedContext)
       }
 
       const result = await desktopAgent.queueTextTurn({
@@ -4756,6 +4841,7 @@ function App() {
       setActivityHintForSession(activeSessionId, result.nextActionHint || result.uiReply)
     } catch (error) {
       restoreSessionMessageDraftIfEmpty(activeSessionId, stagedMessage)
+      clearSessionContextDraftConsumed(activeSessionId, stagedContext)
       restoreSessionContextDraftIfEmpty(activeSessionId, stagedContext)
       setLastErrorForSession(
         activeSessionId,
@@ -4764,10 +4850,12 @@ function App() {
     }
   }, [
     activeSessionId,
-    currentContextDraft,
     currentMessageDraft,
     desktopAgent,
     hasDesktopApi,
+    clearSessionContextDraftConsumed,
+    readSessionContextDraftForSubmit,
+    markSessionContextDraftConsumed,
     restoreSessionMessageDraftIfEmpty,
     restoreSessionContextDraftIfEmpty,
     setActivityHintForSession,
@@ -4784,11 +4872,13 @@ function App() {
     const nextContextDraft = mergeStagedTurnInput(currentContextDraft, currentMessageDraft)
 
     setSessionContextDraft(activeSessionId, nextContextDraft)
+    clearSessionContextDraftConsumed(activeSessionId)
     setSessionMessageDraft(activeSessionId, '')
     setLastError('')
     setActivityHint(currentContextDraft.trim() ? '已追加到下一轮输入。' : '已暂存到下一轮输入。')
   }, [
     activeSessionId,
+    clearSessionContextDraftConsumed,
     currentContextDraft,
     currentMessageDraft,
     setSessionContextDraft,
@@ -4806,10 +4896,12 @@ function App() {
 
     setSessionMessageDraft(activeSessionId, nextDraft)
     setSessionContextDraft(activeSessionId, '')
+    clearSessionContextDraftConsumed(activeSessionId)
     setLastError('')
     setActivityHint('已将暂存内容放回输入框。')
   }, [
     activeSessionId,
+    clearSessionContextDraftConsumed,
     currentContextDraft,
     currentMessageDraft,
     setSessionContextDraft,
@@ -4822,9 +4914,10 @@ function App() {
     }
 
     setSessionContextDraft(activeSessionId, '')
+    clearSessionContextDraftConsumed(activeSessionId)
     setLastError('')
     setActivityHint('已清空下一轮暂存。')
-  }, [activeSessionId, currentContextDraft, setSessionContextDraft])
+  }, [activeSessionId, clearSessionContextDraftConsumed, currentContextDraft, setSessionContextDraft])
 
   const handleRequestCancelCurrentTask = useCallback(() => {
     if (!hasDesktopApi || !activeSessionId || !currentCancelableTaskKey) {
@@ -5257,8 +5350,21 @@ function App() {
     DEVELOPER_TOOL_OPTIONS,
     settingsDraft.developerTool,
   ) || '当前执行器'
+  const activeSessionDeveloperTool = useMemo(() => {
+    const activeTaskTool = normalizeDeveloperToolValue(activeTask?.provider)
+    if (activeTaskTool) {
+      return activeTaskTool
+    }
+
+    const boundProfileTool = normalizeDeveloperToolValue(sessionDetail?.boundProfile?.developerTool)
+    if (boundProfileTool) {
+      return boundProfileTool
+    }
+
+    return settingsDraft.developerTool
+  }, [activeTask?.provider, sessionDetail?.boundProfile?.developerTool, settingsDraft.developerTool])
   const displayedBackendLabel = activeTask ? backendWorkerLabel : selectedDeveloperToolLabel
-  const developerToolPathLabel = `${selectedDeveloperToolLabel} 可执行文件`
+  const developerToolPathLabel = `${selectedDeveloperToolLabel} 全局可执行文件`
   const executionModeLabel =
     settingsDraft.executionMode === 'fake' || settingsDraft.testMode
       ? 'Fake / 测试'
@@ -5268,6 +5374,18 @@ function App() {
   const activeSessionToolLabel = sessionDetail?.boundProfile?.developerTool
     ? providerLabelByValue(DEVELOPER_TOOL_OPTIONS, sessionDetail.boundProfile.developerTool)
     : selectedDeveloperToolLabel
+  const activeSessionRuntimeSessionId =
+    sessionDetail?.session.developerToolThreads?.[activeSessionDeveloperTool] ||
+    sessionDetail?.session.codexThreadId ||
+    null
+  const activeSessionRuntimeLabel = providerLabelByValue(
+    DEVELOPER_TOOL_OPTIONS,
+    activeSessionDeveloperTool,
+  )
+  const selectedDeveloperToolResolvedPath =
+    developerToolDetection?.tool === settingsDraft.developerTool && developerToolDetection?.found
+      ? developerToolDetection.resolvedPath
+      : ''
   const currentThemePreset = normalizeThemePreset(settingsDraft.themePreset)
   const activeThemePresetOption =
     THEME_PRESET_OPTIONS.find((option) => option.value === currentThemePreset) ||
@@ -5503,7 +5621,7 @@ function App() {
         <section className="settings-subsection">
           <div className="settings-subsection-header">
             <strong>工具选择</strong>
-            <p>选择要使用的开发工具，并检查可执行文件路径。</p>
+            <p>这里维护各个开发工具的全局可执行文件路径；项目层只选择工具名称，不再单独维护路径。</p>
           </div>
 
           <div className="settings-grid settings-grid-tooling">
@@ -5582,6 +5700,11 @@ function App() {
                   {isDetectingDeveloperTool ? '检测中…' : '重新检测'}
                 </button>
               </div>
+              {selectedDeveloperToolResolvedPath ? (
+                <p className="field-note is-valid">
+                  实际运行路径：<code>{selectedDeveloperToolResolvedPath}</code>
+                </p>
+              ) : null}
             </label>
 
             <label className="wide">
@@ -7591,7 +7714,7 @@ function App() {
                     <div>
                       <strong>开发工具与路径检查</strong>
                       <p className="panel-note">
-                        这一步只保留真实执行所需的最小信息。路径能自动探测就自动探测，找不到再手工填写。
+                        这一步只设置全局开发工具路径。后续项目只需要选择工具名称，路径都会沿用这里的全局配置。
                       </p>
                     </div>
                     <span className="summary-chip">默认真实执行</span>
@@ -7674,6 +7797,11 @@ function App() {
                           {isDetectingDeveloperTool ? '检测中…' : '重新检测'}
                         </button>
                       </div>
+                      {selectedDeveloperToolResolvedPath ? (
+                        <p className="field-note is-valid">
+                          实际运行路径：<code>{selectedDeveloperToolResolvedPath}</code>
+                        </p>
+                      ) : null}
                     </label>
 
                     <label className="wide">
@@ -7857,7 +7985,7 @@ function App() {
             </aside>
 
             <div className="project-manager-dialog-editor">
-              <div className="settings-subsection-header project-manager-editor-header">
+                <div className="settings-subsection-header project-manager-editor-header">
                 <div className="project-manager-editor-title-row">
                   <strong>{isEditingSavedProfile ? '编辑项目配置' : '新建项目配置'}</strong>
                   <div className="summary-chip-group project-manager-editor-status">
@@ -7870,7 +7998,7 @@ function App() {
                     ) : null}
                   </div>
                 </div>
-                <p>名称与工作目录创建后固定；开发工具和项目元信息可编辑。</p>
+                <p>名称与工作目录创建后固定；项目层只选择开发工具，工具路径沿用全局开发工具设置。</p>
               </div>
 
               <div className="project-manager-dialog-editor-scroll">
@@ -7965,7 +8093,7 @@ function App() {
                       ))}
                     </select>
                     <small className="field-note">
-                      想为这个项目单独指定工具时在这里选；留空就继续使用默认工具。
+                      想为这个项目单独指定工具时在这里选；留空就继续使用默认工具。工具路径沿用全局设置，不在项目里单独维护。
                     </small>
                   </label>
 
@@ -8662,7 +8790,7 @@ function App() {
                       onClick={() =>
                         void handleCopySessionIdentifiers({
                           sessionId: sessionDetail.session.id,
-                          runtimeSessionId: sessionDetail.session.codexThreadId,
+                          runtimeSessionId: activeSessionRuntimeSessionId,
                         })
                       }
                     >
@@ -8677,8 +8805,8 @@ function App() {
                     <code>{sessionDetail?.session.id || '—'}</code>
                   </div>
                   <div className="diagnostic-meta-item">
-                    <span>运行会话 ID</span>
-                    <code>{sessionDetail?.session.codexThreadId || '—'}</code>
+                    <span>{`${activeSessionRuntimeLabel} 运行会话 ID`}</span>
+                    <code>{activeSessionRuntimeSessionId || '—'}</code>
                   </div>
                 </div>
 

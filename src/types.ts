@@ -135,6 +135,7 @@ export interface SessionRecord {
   lastMessagePreview: string
   unreadEventCount: number
   archivedAt: string | null
+  developerToolThreads?: Partial<Record<DeveloperTool, string>>
   boundProfileName?: string | null
   boundWorkingDirectory?: string | null
 }

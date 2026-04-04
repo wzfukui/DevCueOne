@@ -33,6 +33,7 @@ Current product direction:
 
 - Bind each session to a stable project profile
 - Store working directory, default prompt context, and usage notes
+- Optionally override the developer-tool choice per project without duplicating executable paths
 - Restore project context when switching sessions
 
 ### Voice + text workflow
@@ -52,6 +53,11 @@ Supported developer tools:
 - Gemini CLI
 - Qwen Code
 
+Current path model:
+
+- Global settings remember one executable path per supported tool and show the resolved runtime path actually used by the desktop app
+- Project profiles only choose the tool override; they do not maintain a second path field
+
 Supported STT / TTS modes:
 
 - Browser / System
@@ -64,7 +70,7 @@ Supported STT / TTS modes:
 
 ### Diagnostics and recovery
 
-- Session-level diagnostics with session ID, runtime ID, developer-tool thread ID, task summary, and event stream
+- Session-level diagnostics with session ID, the active backend's runtime session ID, task summary, and event stream
 - Startup and runtime orphan-task recovery
 - Browser-only mock mode and deterministic fake backend for UI/testing work
 - Automated tests for state storage, developer-tool args, voice heuristics, packaging, signing, and notarization helpers
@@ -111,6 +117,7 @@ Recommended first-run flow:
 2. grant microphone permission
 3. configure STT / TTS, or temporarily switch to `fake` / `testMode`
 4. configure the developer-tool CLI and verify its executable path
+5. confirm the resolved runtime path in global settings matches the binary you expect the desktop app to launch
 
 ## Common Commands
 
@@ -178,6 +185,8 @@ npm run package:mac:x64
 
 - Chinese product README: [`README_CN.md`](./README_CN.md)
 - Technical runbook: [`docs/operations/technical-runbook.md`](./docs/operations/technical-runbook.md)
+- Turn pipeline and project context: [`docs/architecture/turn-pipeline-and-project-profile-context.md`](./docs/architecture/turn-pipeline-and-project-profile-context.md)
+- Gemini CLI integration practice: [`docs/integrations/gemini-cli-integration-practice.md`](./docs/integrations/gemini-cli-integration-practice.md)
 - Release automation: [`docs/operations/release-automation.md`](./docs/operations/release-automation.md)
 - macOS signing and notarization: [`docs/operations/macos-signing-and-notarization.md`](./docs/operations/macos-signing-and-notarization.md)
 - Product design archive: [`docs/product/phase-2/product-design.md`](./docs/product/phase-2/product-design.md)

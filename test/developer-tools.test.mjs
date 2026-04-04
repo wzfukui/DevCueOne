@@ -70,7 +70,7 @@ test('cursor cli args always trust the workspace and map bypass mode explicitly'
   )
 })
 
-test('claude code prompt args terminate variadic options before the prompt', () => {
+test('print mode spawn args place the prompt correctly for each backend', () => {
   assert.deepEqual(
     buildPrintModeSpawnArgs({
       backend: 'claude_code',
@@ -87,6 +87,24 @@ test('claude code prompt args terminate variadic options before the prompt', () 
       prompt: 'hello',
     }),
     ['--print', 'hello'],
+  )
+
+  assert.deepEqual(
+    buildPrintModeSpawnArgs({
+      backend: 'gemini_cli',
+      args: ['--output-format', 'json', '--yolo'],
+      prompt: 'hello',
+    }),
+    ['--output-format', 'json', '--yolo', '--prompt', 'hello'],
+  )
+
+  assert.deepEqual(
+    buildPrintModeSpawnArgs({
+      backend: 'qwen_cli',
+      args: ['--output-format', 'json', '--yolo'],
+      prompt: 'hello',
+    }),
+    ['--output-format', 'json', '--yolo', '--prompt', 'hello'],
   )
 })
 
@@ -170,6 +188,90 @@ test('gemini json wrapper is parsed into the shared schema payload', () => {
     status: 'done',
     needTextContext: false,
     nextActionHint: 'next',
+  })
+})
+
+test('gemini error wrapper surfaces the backend error message', () => {
+  assert.throws(
+    () =>
+      parseStructuredDeveloperToolOutput(
+        JSON.stringify({
+          session_id: 'gemini-session-2',
+          error: {
+            message: 'Requested entity was not found.',
+            code: 1,
+          },
+        }),
+        'gemini_cli',
+      ),
+    /Requested entity was not found\./,
+  )
+})
+
+test('gemini plain-text response falls back into the shared schema payload', () => {
+  const parsed = parseStructuredDeveloperToolOutput(
+    JSON.stringify({
+      session_id: 'gemini-session-3',
+      response:
+        'The user wants to read the `chat.txt` file. I have successfully read the file and summarized it.',
+    }),
+    'gemini_cli',
+  )
+
+  assert.deepEqual(parsed, {
+    threadId: 'gemini-session-3',
+    backend: 'gemini_cli',
+    spokenReply:
+      'The user wants to read the `chat.txt` file. I have successfully read the file and summarized it.',
+    uiReply:
+      'The user wants to read the `chat.txt` file. I have successfully read the file and summarized it.',
+    status: 'done',
+    needTextContext: false,
+    nextActionHint: '如果要继续，可以直接说下一步。',
+  })
+})
+
+test('gemini mixed text response prefers the final structured JSON payload', () => {
+  const parsed = parseStructuredDeveloperToolOutput(
+    JSON.stringify({
+      session_id: 'gemini-session-5',
+      response: [
+        '**Current Status:** external_ssh_gateway.go crashed with panic and error logs.',
+        '[Thought]I will keep checking.',
+        '{"spokenReply":"服务状态已确认。","uiReply":"`internal_ssh_bridge.go` 正在监听 8081；`external_ssh_gateway.go` 崩溃导致 8082 和 2222 未监听。","status":"done","needTextContext":false,"nextActionHint":"请刷新插件后重试连接。"}',
+      ].join('\n'),
+    }),
+    'gemini_cli',
+  )
+
+  assert.deepEqual(parsed, {
+    threadId: 'gemini-session-5',
+    backend: 'gemini_cli',
+    spokenReply: '服务状态已确认。',
+    uiReply: '`internal_ssh_bridge.go` 正在监听 8081；`external_ssh_gateway.go` 崩溃导致 8082 和 2222 未监听。',
+    status: 'done',
+    needTextContext: false,
+    nextActionHint: '请刷新插件后重试连接。',
+  })
+})
+
+test('plain-text clarification response is mapped to need_input', () => {
+  const parsed = parseStructuredDeveloperToolOutput(
+    JSON.stringify({
+      session_id: 'gemini-session-4',
+      response: 'Please provide the exact file path you want me to inspect.',
+    }),
+    'gemini_cli',
+  )
+
+  assert.deepEqual(parsed, {
+    threadId: 'gemini-session-4',
+    backend: 'gemini_cli',
+    spokenReply: 'Please provide the exact file path you want me to inspect.',
+    uiReply: 'Please provide the exact file path you want me to inspect.',
+    status: 'need_input',
+    needTextContext: true,
+    nextActionHint: '请补充缺失信息后再试一次。',
   })
 })
 

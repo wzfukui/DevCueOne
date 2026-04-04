@@ -2,26 +2,28 @@
 
 ## Purpose
 
-This note records the engineering process used to integrate Gemini CLI into DevCue One as a structured external developer tool runner.
+This note records the engineering process used to validate and harden Gemini CLI integration inside DevCue One.
 
-The goal is to make future debugging and extension work reproducible without relying on personal machine details.
+The goal is to keep future debugging and extension work reproducible without relying on personal machine details.
 
 ## Privacy Rule
 
 All commands, paths, session IDs, and logs in this document are sanitized.
 
+- Use `<gemini-path>` instead of a real local binary path.
 - Use `<project-root>` instead of a real absolute path.
 - Use `<session-id>` instead of a real Gemini session identifier.
 - Do not copy local usernames, home directories, or machine-specific MCP paths into product docs.
 
 ## What Was Verified Locally
 
-The integration was verified against Gemini CLI `0.34.0`.
+The integration was re-verified against Gemini CLI `0.36.0`.
 
 Observed supported flags:
 
 - `--prompt`
 - `--output-format json`
+- `--model`
 - `--yolo`
 - `--approval-mode auto_edit`
 - `--resume latest`
@@ -31,11 +33,12 @@ Observed supported flags:
 Representative sanitized probes:
 
 ```bash
-gemini --help
-gemini --list-sessions
-gemini --prompt "<prompt>" --output-format json --yolo
-gemini --prompt "<prompt>" --output-format json --resume <session-id>
-gemini --prompt "<prompt>" --output-format json --approval-mode auto_edit --resume latest
+<gemini-path> --help
+<gemini-path> --version
+<gemini-path> --list-sessions
+<gemini-path> --output-format json --model gemini-2.5-flash-lite --yolo --prompt "<prompt>"
+<gemini-path> --output-format json --model gemini-2.5-flash-lite --resume <session-id> --yolo --prompt "<prompt>"
+<gemini-path> --output-format json --model gemini-2.5-flash-lite --approval-mode auto_edit --resume latest --prompt "<prompt>"
 ```
 
 ## Key Runtime Findings
@@ -50,13 +53,13 @@ Gemini CLI supports session resume in the current project scope.
 
 Product implication:
 
-- The app can safely persist Gemini session IDs in the existing shared `codexThreadId` field and reuse them on the next turn.
+- The app persists Gemini runtime session IDs in `sessions.developer_tool_threads_json` under the `gemini_cli` key and reuses them on the next turn.
 
 ### 2. Output Shape
 
-When Gemini runs with `--output-format json`, stdout is not the final schema payload directly.
+When Gemini runs with `--output-format json`, stdout is still an envelope rather than the final schema payload directly.
 
-Gemini wraps the assistant result in a JSON envelope similar to:
+Representative sanitized envelope:
 
 ```json
 {
@@ -70,14 +73,21 @@ Gemini wraps the assistant result in a JSON envelope similar to:
 }
 ```
 
+Observed runtime variants inside `response`:
+
+- a JSON string that already matches the shared schema
+- plain text with no JSON wrapper
+- mixed prose plus a final standalone JSON object
+
 Product implication:
 
 - The parser must extract `session_id` as the reusable conversation identifier.
-- The parser must parse `response` again because it contains the final structured payload as a JSON string.
+- The parser must prefer the final valid structured JSON object inside `response` when Gemini emits mixed prose plus JSON.
+- When no structured JSON exists, the parser must still map plain text into the shared `done / need_input / failed` schema instead of crashing.
 
 ### 3. Stdout vs Stderr
 
-Gemini writes structured result JSON to stdout, but environment and runtime messages may appear on stderr.
+Gemini writes the structured envelope to stdout, but environment and runtime messages may appear on stderr.
 
 Examples of stderr-only noise:
 
@@ -104,63 +114,91 @@ Product implication:
 - `bypassCodexSandbox === true` maps to `--yolo`.
 - `bypassCodexSandbox === false` maps to `--approval-mode auto_edit`.
 
+### 5. Executable Resolution And Model Selection
+
+Desktop Electron processes can resolve a different `gemini` binary than an interactive shell.
+
+Observed production risk:
+
+- GUI `PATH` can hit an older Homebrew-installed Gemini binary even when the user shell resolves a newer `nvm`-managed binary.
+
+Product implication:
+
+- Global settings own the per-tool executable path.
+- Project profiles only choose the tool override and do not store another path copy.
+- The runtime should re-detect the preferred executable from the global Gemini path before each launch.
+- The default Gemini model is `gemini-2.5-flash-lite`, with environment override available through `DEVCUE_GEMINI_MODEL`.
+
 ## Compatibility Gaps Found
 
-Before the fix, Gemini was not fully compatible with the product runtime.
+Before the hardening pass, Gemini was not fully compatible with the product runtime.
 
 Identified gaps:
 
-1. Gemini was marked as non-resumable in the runtime capability matrix.
-2. Gemini calls were not forced into `--output-format json`.
-3. The shared structured parser did not understand the `{ session_id, response, stats }` envelope.
-4. Headless non-bypass mode did not explicitly select a non-interactive approval strategy.
+1. Gemini prompt assembly could emit a dangling `--prompt` flag without the actual prompt value.
+2. The desktop runtime could trust GUI `PATH` ordering and launch an outdated Gemini binary.
+3. The shared parser assumed `response` was always pure JSON and could misclassify mixed prose plus trailing JSON as `failed`.
+4. Diagnostics only exposed the legacy Codex runtime field, which hid Gemini's actual reusable session ID.
 
 ## Product Changes Applied
 
 The integration was updated with the following decisions:
 
-1. Mark Gemini CLI as resumable in the developer tool definition map.
+1. Keep Gemini CLI marked as resumable in the developer tool definition map.
 2. Reuse the stored session ID through `--resume <session-id>` when available.
 3. Always call Gemini in prompt mode with `--output-format json`.
-4. Map bypass-on to `--yolo`.
-5. Map bypass-off to `--approval-mode auto_edit`.
-6. Extend the shared structured parser to support Gemini `response` wrappers.
-7. Update the UI runtime note so the current behavior is visible in settings.
-8. Add automated tests for Gemini resume capability and wrapped JSON parsing.
+4. Append the final prompt as `--prompt "<prompt>"` instead of emitting a bare `--prompt`.
+5. Map bypass-on to `--yolo`.
+6. Map bypass-off to `--approval-mode auto_edit`.
+7. Default Gemini CLI runs to `gemini-2.5-flash-lite`.
+8. Extend the shared structured parser to support Gemini `response` wrappers, mixed prose plus final JSON, and plain-text fallback.
+9. Reuse the shared runtime executable resolver so the desktop app launches the preferred Gemini binary from the global tool-path setting instead of trusting GUI `PATH` ordering.
+10. Show the Gemini runtime session ID in diagnostics through the per-tool thread map.
+11. Add automated tests for Gemini resume capability, prompt assembly, backend-error surfacing, plain-text fallback, and mixed-output parsing.
 
 ## Sanitized Invocation Mapping
 
 Current Gemini invocation strategy in the app:
 
 ```text
+base:
+  <gemini-path> --output-format json --model gemini-2.5-flash-lite
+
 if hasStoredSessionId:
-  gemini --prompt "<prompt>" --output-format json --resume <session-id> ...
-else:
-  gemini --prompt "<prompt>" --output-format json ...
+  add --resume <session-id>
 
 if bypassEnabled:
   add --yolo
 else:
   add --approval-mode auto_edit
+
+final prompt:
+  --prompt "<prompt>"
 ```
 
 ## Regression Checklist
 
 Use this checklist when Gemini CLI changes version or the app runtime is refactored:
 
-1. Run `gemini --help` and confirm `--prompt`, `--output-format`, `--resume`, and approval flags still exist.
-2. Run a minimal structured prompt with `--output-format json` and confirm stdout is valid JSON.
-3. Confirm the JSON envelope still carries a reusable session identifier.
-4. Confirm the final assistant payload is still under `response` or update the parser accordingly.
-5. Verify `--resume <session-id>` preserves the same session across turns.
-6. Verify bypass-on still works in headless mode.
-7. Verify bypass-off does not block on interactive approval prompts.
-8. Re-run the focused test file for developer tool parsing and capability flags.
+1. Run `gemini --help` and confirm `--prompt`, `--output-format`, `--model`, `--resume`, and approval flags still exist.
+2. Run `gemini --version` and confirm the actual binary resolved by the desktop app matches the intended install.
+3. Run a minimal structured prompt with `--output-format json` and confirm stdout is valid JSON.
+4. Confirm the JSON envelope still carries a reusable session identifier.
+5. Confirm the final assistant payload is still under `response`, or update the parser accordingly.
+6. Confirm mixed prose plus trailing JSON is still normalized into the shared schema.
+7. Verify `--resume <session-id>` preserves the same session across turns.
+8. Verify bypass-on still works in headless mode.
+9. Verify bypass-off does not block on interactive approval prompts.
+10. Re-run the focused test file for developer tool parsing and capability flags.
 
 ## Local Validation Performed
 
-Validation completed during the integration pass:
+Validation completed during the current hardening pass:
 
+- local CLI probe: `gemini --help`
+- local CLI probe: `gemini --version`
+- local CLI probe: structured headless run with `--output-format json --model gemini-2.5-flash-lite --yolo`
+- local CLI probe: structured resume run with `--output-format json --model gemini-2.5-flash-lite --resume <session-id> --yolo`
 - focused test: `node --test test/developer-tools.test.mjs`
 - lint: `npm run lint`
 - build: `npm run build`
@@ -173,7 +211,7 @@ Known unrelated environment issue:
 
 If Gemini CLI changes its JSON envelope again, prefer extending the shared parser rather than adding Gemini-only parsing code inside the task runner.
 
-That keeps Codex, Claude Code, Cursor CLI, and Gemini CLI on one structured-output path with tool-specific argument mapping only.
+That keeps Codex, Claude Code, Cursor CLI, Gemini CLI, and Qwen Code on one structured-output path with backend-specific argument mapping and a shared runtime executable resolver.
 
 ## Related Qwen Note
 
@@ -191,4 +229,4 @@ Verified differences from a local `qwen 0.12.6` probe:
 Product implication:
 
 - the shared parser must support both Gemini object envelopes and Qwen event-array envelopes
-- fenced JSON should be stripped before the final schema parse
+- Gemini and Qwen now share the same prompt-placement helper and runtime executable resolver, even though their output envelopes differ

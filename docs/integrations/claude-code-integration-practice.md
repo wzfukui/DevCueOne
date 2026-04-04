@@ -89,7 +89,7 @@ Product implication:
 
 Product implication:
 
-- The app can safely keep reusing the stored shared `codexThreadId` field for Claude session persistence.
+- The app persists Claude runtime session IDs in `sessions.developer_tool_threads_json` under the `claude_code` key.
 
 ### 4. Non-Interactive Permission Mapping
 
@@ -121,6 +121,7 @@ The integration was updated with the following decisions:
 3. Extend the shared parser to prefer `structured_output` when Claude returns it.
 4. Add automated tests for Claude argument assembly and structured envelope parsing.
 5. Document the verified invocation shape and resume behavior.
+6. Reuse the shared runtime executable resolver so the desktop app launches the preferred Claude binary from the global tool-path setting instead of trusting GUI `PATH` ordering.
 
 ## Sanitized Invocation Mapping
 

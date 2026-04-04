@@ -138,6 +138,7 @@ let stateStore = null
 const runningTasks = new Map()
 const queuedTasks = []
 const TASK_RECOVERY_EVENT = 'task_recovered'
+const DEFAULT_GEMINI_CLI_MODEL = 'gemini-2.5-flash-lite'
 
 function settingsPath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -224,6 +225,54 @@ function voiceInputModeLabel(mode) {
 
 function normalizeProjectDeveloperTool(tool) {
   return DEVELOPER_TOOL_DEFINITIONS[tool] ? tool : null
+}
+
+function geminiCliModel() {
+  const fromEnv = process.env.DEVCUE_GEMINI_MODEL?.trim()
+  return fromEnv || DEFAULT_GEMINI_CLI_MODEL
+}
+
+async function resolveRuntimeDeveloperToolCommand(tool, configuredPath = '') {
+  const detection = await detectDeveloperToolExecutable({
+    tool,
+    executablePath: configuredPath,
+  })
+
+  return detection.resolvedPath || configuredPath || defaultCommandForDeveloperTool(tool)
+}
+
+async function resolveSettingsDeveloperToolPath(settings) {
+  const normalized = normalizeSettings(settings)
+  const activeTool = normalized.developerTool
+  const configuredPath =
+    normalized.developerToolPaths?.[activeTool]?.trim() ||
+    normalized.developerToolPath?.trim() ||
+    defaultCommandForDeveloperTool(activeTool)
+  const detection = await detectDeveloperToolExecutable({
+    tool: activeTool,
+    executablePath: configuredPath,
+  })
+
+  if (!detection.found || !detection.resolvedPath) {
+    return normalized
+  }
+
+  const resolvedPath = detection.resolvedPath.trim()
+  if (!resolvedPath) {
+    return normalized
+  }
+
+  const developerToolPaths = {
+    ...normalized.developerToolPaths,
+    [activeTool]: resolvedPath,
+  }
+
+  return {
+    ...normalized,
+    developerToolPaths,
+    developerToolPath: resolvedPath,
+    codexPath: developerToolPaths.codex || normalized.codexPath,
+  }
 }
 
 function resolveProfileDeveloperToolSettings(profile, settings) {
@@ -1253,11 +1302,16 @@ ${languagePrompt}
 
 输出要求：
 - 最终回复必须是单个 JSON 对象，禁止代码块、禁止 Markdown、禁止 JSON 之外的任何额外文字。
+- 如果意外输出了额外说明，最后一行也必须重新输出一个完整 JSON 对象，且该 JSON 对象可被直接解析。
 - spokenReply：简短、适合直接 TTS 播报。
 - uiReply：给界面显示，可稍详细，但仍要紧凑。
 - status：只能是 done、need_input、failed。
 - needTextContext：如果缺 URL、IP、精确路径或字符串，就设为 true。
 - nextActionHint：一句话提示下一步。
+- 不要输出 “The user wants…”, “I have successfully…”, 分析过程、工具调用说明或额外前后缀。
+
+格式示例：
+{"spokenReply":"已经读取 chat.txt。","uiReply":"chat.txt 的主要内容是……","status":"done","needTextContext":false,"nextActionHint":"如果要继续，可以直接说下一步。"}
 
 行为要求：
 - 不要凭空猜测项目路径、接口地址和配置值。
@@ -2157,10 +2211,10 @@ async function runFakeCodexTurn(payload, settings, sessionDetail) {
 }
 
 async function runCodexCliTurn(runtime, payload, settings, sessionDetail) {
-  const codexPath =
-    settings.developerToolPath?.trim() ||
-    settings.codexPath?.trim() ||
-    defaultCommandForDeveloperTool('codex')
+  const codexPath = await resolveRuntimeDeveloperToolCommand(
+    'codex',
+    settings.developerToolPath?.trim() || settings.codexPath?.trim(),
+  )
   const workingDirectory = payload.workingDirectory?.trim() || settings.workingDirectory || process.cwd()
   const sessionThreadId = getSessionThreadIdForDeveloperTool(sessionDetail.session, 'codex')
   const shouldResume = Boolean(sessionThreadId)
@@ -2505,7 +2559,10 @@ async function runClaudeCodeTurn(runtime, payload, settings, sessionDetail) {
 
   return runPrintModeDeveloperToolTurn({
     backend: 'claude_code',
-    command: settings.developerToolPath?.trim() || defaultCommandForDeveloperTool('claude_code'),
+    command: await resolveRuntimeDeveloperToolCommand(
+      'claude_code',
+      settings.developerToolPath?.trim(),
+    ),
     args,
     prompt,
     workingDirectory,
@@ -2535,7 +2592,10 @@ async function runCursorCliTurn(runtime, payload, settings, sessionDetail) {
 
   return runPrintModeDeveloperToolTurn({
     backend: 'cursor_cli',
-    command: settings.developerToolPath?.trim() || defaultCommandForDeveloperTool('cursor_cli'),
+    command: await resolveRuntimeDeveloperToolCommand(
+      'cursor_cli',
+      settings.developerToolPath?.trim(),
+    ),
     args,
     prompt,
     workingDirectory,
@@ -2558,7 +2618,7 @@ async function runGeminiCliTurn(runtime, payload, settings, sessionDetail) {
     profile: sessionDetail.boundProfile,
     workingLanguage: settings.workingLanguage,
   })
-  const args = ['--prompt', '--output-format', 'json']
+  const args = ['--output-format', 'json', '--model', geminiCliModel()]
 
   if (settings.bypassCodexSandbox !== false) {
     args.push('--yolo')
@@ -2572,7 +2632,10 @@ async function runGeminiCliTurn(runtime, payload, settings, sessionDetail) {
 
   return runPrintModeDeveloperToolTurn({
     backend: 'gemini_cli',
-    command: settings.developerToolPath?.trim() || defaultCommandForDeveloperTool('gemini_cli'),
+    command: await resolveRuntimeDeveloperToolCommand(
+      'gemini_cli',
+      settings.developerToolPath?.trim(),
+    ),
     args,
     prompt,
     workingDirectory,
@@ -2595,7 +2658,7 @@ async function runQwenCliTurn(runtime, payload, settings, sessionDetail) {
     profile: sessionDetail.boundProfile,
     workingLanguage: settings.workingLanguage,
   })
-  const args = ['--prompt', '--output-format', 'json']
+  const args = ['--output-format', 'json']
 
   if (settings.bypassCodexSandbox !== false) {
     args.push('--yolo')
@@ -2609,7 +2672,10 @@ async function runQwenCliTurn(runtime, payload, settings, sessionDetail) {
 
   return runPrintModeDeveloperToolTurn({
     backend: 'qwen_cli',
-    command: settings.developerToolPath?.trim() || defaultCommandForDeveloperTool('qwen_cli'),
+    command: await resolveRuntimeDeveloperToolCommand(
+      'qwen_cli',
+      settings.developerToolPath?.trim(),
+    ),
     args,
     prompt,
     workingDirectory,
@@ -2905,7 +2971,7 @@ async function resolveAcknowledgementCue(language) {
 }
 
 async function saveSettings(settings) {
-  const normalized = normalizeSettings(settings)
+  const normalized = await resolveSettingsDeveloperToolPath(settings)
   stateStore.saveSettings(normalized)
   broadcastStateChanged()
   return normalized

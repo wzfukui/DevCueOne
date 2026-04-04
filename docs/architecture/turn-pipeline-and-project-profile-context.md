@@ -86,7 +86,7 @@ The fields are all persisted, but they are not used with the same strength.
 | --- | --- |
 | `name` | UI summary, profile picker label, prompt context |
 | `workingDirectory` | validated on save, used as task working directory |
-| `developerTool` | optional per-profile override of the global developer tool |
+| `developerTool` | optional per-profile override of the global developer tool key; executable paths still come from global settings |
 | `defaultPromptContext` | prompt context only |
 | `usageNotes` | prompt context only |
 
@@ -171,7 +171,8 @@ Renderer path in `src/App.tsx`:
 1. user types the main request in the message input
 2. user may also fill the staged supplement text box
 3. `handleSubmitTextTurn()` calls `desktopAgent.submitTextTurn()`
-4. on failure/cancel, renderer restores the staged text back into the inputs
+4. message draft can be restored on failed/cancelled final results
+5. staged supplement text is treated as one-shot context and is only restored when local submission fails before the task is actually dispatched
 
 There is also `handleQueueTextTurn()` for queue mode. That path returns early with a local confirmation while the queued task runs later.
 
@@ -185,7 +186,7 @@ Renderer path:
 4. staged supplement text is attached as `pendingText`
 5. renderer attaches `captureMode`
 6. renderer calls `desktopAgent.submitVoiceTurn()`
-7. on failure/cancel, staged supplement text can be restored
+7. staged supplement text is consumed once for that submitted turn and is only restored when the local submit path throws before the task reaches the backend
 
 Voice-specific UX around this path:
 
@@ -381,12 +382,19 @@ Important:
 
 - `defaultPromptContext` and `usageNotes` are not given special structure beyond plain text labels
 - if these values are empty, the prompt shows `(无)`
+- staged supplement text is intentionally one-shot and is not supposed to silently carry into later turns after a successful dispatch
 
 ### 12.2 Profile-Level Tool Override
 
 Before the adapter is selected, `resolveProfileDeveloperToolSettings(profile, settings)` can override the global developer tool with `profile.developerTool`.
 
 This means one project profile can always route to a different backend than the current global default.
+
+Important runtime detail:
+
+- the profile override only changes the selected tool key
+- the executable path still comes from the global `developerToolPaths[tool]` map
+- the main process then re-detects the preferred executable before launch, so GUI `PATH` ordering does not silently pick an older binary
 
 ## 13. Structured Output Contract
 
@@ -403,15 +411,18 @@ Required fields:
 Backend-specific wrappers may return envelopes around the final payload, so `parseStructuredDeveloperToolOutput(...)` in `electron/developer-tools.mjs` normalizes:
 
 - thread/session ID extraction
+- per-tool runtime ID extraction into the shared session record
 - top-level `result` or `response` envelopes
 - markdown code-fence stripping
+- mixed prose plus trailing JSON extraction
+- plain-text fallback into the shared `done / need_input / failed` schema
 - final JSON object parsing
 
 ## 14. Result Persistence And Return Path
 
 After a developer tool or local router returns a result:
 
-1. session thread ID is updated when present
+1. the current backend runtime session ID is updated in `session.developerToolThreads[tool]` when present
 2. assistant/system message is added to message history
 3. `task_result` event is written
 4. task record is finalized as completed/failed/cancelled
@@ -424,7 +435,8 @@ For queued tasks, the final resolution happens when execution finishes. For queu
 After `desktopAgent.submitTextTurn()` or `desktopAgent.submitVoiceTurn()` resolves, the renderer:
 
 - updates per-session activity hint
-- restores draft input when needed
+- restores the main draft input when needed
+- keeps next-turn supplement text one-shot instead of replaying it across later turns
 - plays result audio through `playTurnResultWithDedup(...)`
 - may log playback-related client events
 
@@ -433,6 +445,7 @@ Playback rules are intentionally conservative:
 - only the active workspace speaks results aloud
 - duplicate result playback is suppressed
 - interrupted or inactive workspaces skip playback
+- playback errors update the activity hint but do not restore already-consumed supplement context
 
 ## 16. Current UX/Product Caveats
 
@@ -568,8 +581,9 @@ When a field seems to be ignored, check in this order:
 2. is the current session bound to that profile
 3. is the request being intercepted by a local router before tool execution
 4. did `buildPrompt(...)` include the expected profile values
-5. did the selected backend return valid structured JSON
-6. did the renderer receive the result but skip playback because the session was inactive
+5. did the selected backend launch the expected resolved executable path
+6. did the selected backend return valid structured JSON or a parseable mixed envelope
+7. did the renderer receive the result but skip playback because the session was inactive
 
 ## 19. Summary
 

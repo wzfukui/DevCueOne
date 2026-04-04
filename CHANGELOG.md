@@ -4,6 +4,17 @@ All notable product-facing changes in DevCue One should be recorded in this file
 
 The format is intentionally lightweight and release-oriented.
 
+## 0.4.6 - 2026-04-04
+
+Patch release for developer-tool runtime hardening and diagnostics cleanup.
+
+Highlights:
+
+- global developer-tool settings now resolve and persist the active tool's preferred absolute executable path, while project profiles only override the tool choice and inherit path details from global settings
+- Codex, Claude Code, Cursor CLI, Gemini CLI, and Qwen Code now share the same runtime executable-resolution path so the desktop app no longer drifts onto stale GUI `PATH` binaries
+- Gemini and Qwen prompt assembly was corrected to pass `--prompt <value>`, Gemini now defaults to `gemini-2.5-flash-lite`, and the shared parser now accepts mixed prose plus trailing JSON instead of misclassifying valid turns as failures
+- diagnostics now show the current backend's runtime session ID, and next-turn supplement text is consumed once instead of leaking across later turns or being restored after successful backend submission
+
 ## 0.4.5 - 2026-04-01
 
 Patch release for runtime-state and release-flow fixes.

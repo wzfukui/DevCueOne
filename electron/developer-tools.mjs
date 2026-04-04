@@ -1,4 +1,5 @@
 import { constants as fsConstants, promises as fs } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 
@@ -83,6 +84,13 @@ export function buildPrintModeSpawnArgs({
     // Claude's --add-dir option is variadic, so we must terminate option parsing
     // before appending the prompt argument.
     spawnArgs.push('--')
+    spawnArgs.push(prompt)
+    return spawnArgs
+  }
+
+  if (backend === 'gemini_cli' || backend === 'qwen_cli') {
+    spawnArgs.push('--prompt', prompt)
+    return spawnArgs
   }
 
   spawnArgs.push(prompt)
@@ -136,6 +144,184 @@ function stripMarkdownCodeFence(text) {
   return fencedMatch ? fencedMatch[1].trim() : trimmed
 }
 
+function isStructuredTurnPayload(payload) {
+  return Boolean(
+    payload &&
+      typeof payload === 'object' &&
+      !Array.isArray(payload) &&
+      typeof payload.status === 'string' &&
+      (
+        typeof payload.spokenReply === 'string' ||
+        typeof payload.uiReply === 'string' ||
+        typeof payload.nextActionHint === 'string'
+      ),
+  )
+}
+
+function extractJsonCandidatesFromText(text) {
+  const source = String(text || '')
+  const candidates = []
+
+  for (let start = 0; start < source.length; start += 1) {
+    const firstChar = source[start]
+    if (firstChar !== '{' && firstChar !== '[') {
+      continue
+    }
+
+    const stack = [firstChar === '{' ? '}' : ']']
+    let inString = false
+    let escaped = false
+
+    for (let index = start + 1; index < source.length; index += 1) {
+      const currentChar = source[index]
+
+      if (inString) {
+        if (escaped) {
+          escaped = false
+          continue
+        }
+
+        if (currentChar === '\\') {
+          escaped = true
+          continue
+        }
+
+        if (currentChar === '"') {
+          inString = false
+        }
+
+        continue
+      }
+
+      if (currentChar === '"') {
+        inString = true
+        continue
+      }
+
+      if (currentChar === '{') {
+        stack.push('}')
+        continue
+      }
+
+      if (currentChar === '[') {
+        stack.push(']')
+        continue
+      }
+
+      if (currentChar === '}' || currentChar === ']') {
+        if (stack[stack.length - 1] !== currentChar) {
+          break
+        }
+
+        stack.pop()
+        if (stack.length === 0) {
+          candidates.push(source.slice(start, index + 1))
+          break
+        }
+      }
+    }
+  }
+
+  return candidates
+}
+
+function extractStructuredPayloadFromMixedText(text) {
+  const normalized = stripMarkdownCodeFence(text)
+  const candidates = extractJsonCandidatesFromText(normalized)
+
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    try {
+      const parsed = JSON.parse(candidates[index])
+      if (isStructuredTurnPayload(parsed)) {
+        return parsed
+      }
+    } catch {
+      // Ignore invalid JSON candidates and keep searching.
+    }
+  }
+
+  return null
+}
+
+function summarizeDeveloperToolText(text, maxLength = 160) {
+  const normalized = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!normalized) {
+    return ''
+  }
+
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength - 1)}…`
+    : normalized
+}
+
+const DEVELOPER_TOOL_NEED_INPUT_PATTERNS = [
+  /please provide/i,
+  /could you provide/i,
+  /need more information/i,
+  /which (file|path|directory|project|url|one)/i,
+  /what (is|exact|specific)/i,
+  /请提供/,
+  /请补充/,
+  /需要更多信息/,
+  /缺少.*(路径|文件|目录|链接|url|名称)/i,
+  /哪个(文件|路径|目录|项目|链接)/,
+]
+
+const DEVELOPER_TOOL_FAILED_PATTERNS = [
+  /\bnot found\b/i,
+  /\bcan't find\b/i,
+  /\bcannot find\b/i,
+  /\bcouldn't find\b/i,
+  /\bunable to\b/i,
+  /\berror\b/i,
+  /\bfailed\b/i,
+  /未找到/,
+  /找不到/,
+  /无法/,
+  /失败/,
+  /错误/,
+]
+
+function inferPlainTextTurnStatus(text) {
+  const normalized = String(text || '').trim()
+
+  if (!normalized) {
+    return 'failed'
+  }
+
+  if (DEVELOPER_TOOL_NEED_INPUT_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return 'need_input'
+  }
+
+  if (DEVELOPER_TOOL_FAILED_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return 'failed'
+  }
+
+  return 'done'
+}
+
+function buildPlainTextStructuredPayload(text) {
+  const normalized = String(text || '').trim()
+  const status = inferPlainTextTurnStatus(normalized)
+  const spokenReply = summarizeDeveloperToolText(normalized, 120)
+
+  return {
+    spokenReply: spokenReply || '本轮任务已完成。',
+    uiReply: normalized || '本轮任务已完成。',
+    status,
+    needTextContext: status === 'need_input',
+    nextActionHint:
+      status === 'need_input'
+        ? '请补充缺失信息后再试一次。'
+        : status === 'failed'
+          ? '请查看结果内容后继续。'
+          : '如果要继续，可以直接说下一步。',
+  }
+}
+
 export function parseStructuredDeveloperToolOutput(rawOutput, backend, fallbackThreadId = null) {
   const trimmed = String(rawOutput || '').trim()
   if (!trimmed) {
@@ -184,6 +370,10 @@ export function parseStructuredDeveloperToolOutput(rawOutput, backend, fallbackT
   } else if (parsedOutput && typeof parsedOutput === 'object') {
     threadId = extractThreadIdFromDeveloperToolPayload(parsedOutput, fallbackThreadId)
 
+    if (parsedOutput.error?.message) {
+      throw new Error(String(parsedOutput.error.message))
+    }
+
     if (typeof parsedOutput.structured_output !== 'undefined') {
       structuredPayload = parsedOutput.structured_output
     } else if (typeof parsedOutput.result !== 'undefined') {
@@ -203,7 +393,25 @@ export function parseStructuredDeveloperToolOutput(rawOutput, backend, fallbackT
   }
 
   if (typeof structuredPayload === 'string') {
-    structuredPayload = JSON.parse(stripMarkdownCodeFence(structuredPayload))
+    const normalizedPayload = stripMarkdownCodeFence(structuredPayload)
+
+    if (!normalizedPayload) {
+      throw new Error(`${developerToolLabel(backend)} 返回了空响应。`)
+    }
+
+    try {
+      structuredPayload = JSON.parse(normalizedPayload)
+    } catch {
+      const extractedPayload = extractStructuredPayloadFromMixedText(normalizedPayload)
+      if (extractedPayload) {
+        structuredPayload = extractedPayload
+      } else if (/^[{\[]/.test(normalizedPayload)) {
+        const preview = summarizeDeveloperToolText(normalizedPayload)
+        throw new Error(`${developerToolLabel(backend)} 返回了不完整的 JSON 响应：${preview}`)
+      } else {
+        structuredPayload = buildPlainTextStructuredPayload(normalizedPayload)
+      }
+    }
   }
 
   if (!structuredPayload || typeof structuredPayload !== 'object' || Array.isArray(structuredPayload)) {
@@ -239,22 +447,168 @@ async function checkExecutablePath(candidatePath) {
 }
 
 function searchExecutableOnPath(command) {
+  return searchExecutableCandidatesOnPath(command).then((matches) => matches[0] || '')
+}
+
+function searchExecutableCandidatesOnPath(command) {
   const probe = process.platform === 'win32' ? 'where' : 'which'
+  const probeArgs = process.platform === 'win32' ? [command] : ['-a', command]
   return new Promise((resolve) => {
-    execFile(probe, [command], (error, stdout) => {
+    execFile(probe, probeArgs, (error, stdout) => {
+      if (error) {
+        resolve([])
+        return
+      }
+
+      const matches = stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+
+      resolve([...new Set(matches)])
+    })
+  })
+}
+
+async function detectUserManagedExecutableCandidates(command) {
+  if (process.platform === 'win32') {
+    return []
+  }
+
+  const home = os.homedir()
+  if (!home) {
+    return []
+  }
+
+  const directCandidates = [
+    path.join(home, '.local', 'bin', command),
+    path.join(home, 'bin', command),
+    path.join(home, '.volta', 'bin', command),
+    path.join(home, '.asdf', 'shims', command),
+    '/opt/homebrew/bin/' + command,
+    '/usr/local/bin/' + command,
+  ]
+
+  const nvmRoot = path.join(home, '.nvm', 'versions', 'node')
+  try {
+    const versionDirs = await fs.readdir(nvmRoot, { withFileTypes: true })
+    for (const entry of versionDirs) {
+      if (!entry.isDirectory()) {
+        continue
+      }
+      directCandidates.push(path.join(nvmRoot, entry.name, 'bin', command))
+    }
+  } catch {
+    // ignore
+  }
+
+  const resolved = []
+  for (const candidatePath of directCandidates) {
+    const executablePath = await checkExecutablePath(candidatePath)
+    if (executablePath) {
+      resolved.push(executablePath)
+    }
+  }
+
+  return [...new Set(resolved)]
+}
+
+function parseSemverVersion(rawVersion = '') {
+  const normalized = String(rawVersion || '').trim()
+  const match = normalized.match(/(\d+)\.(\d+)\.(\d+)/)
+  if (!match) {
+    return null
+  }
+
+  return match.slice(1).map((value) => Number.parseInt(value, 10))
+}
+
+function compareSemverVersion(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    const delta = (left[index] || 0) - (right[index] || 0)
+    if (delta !== 0) {
+      return delta
+    }
+  }
+
+  return 0
+}
+
+async function readExecutableVersion(executablePath) {
+  return new Promise((resolve) => {
+    execFile(executablePath, ['--version'], (error, stdout, stderr) => {
       if (error) {
         resolve('')
         return
       }
 
-      const match = stdout
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .find(Boolean)
-
-      resolve(match || '')
+      const output = `${stdout || ''}\n${stderr || ''}`
+      const match = output.match(/(\d+\.\d+\.\d+)/)
+      resolve(match?.[1] || '')
     })
   })
+}
+
+function executablePathPriority(executablePath) {
+  if (!executablePath) {
+    return 0
+  }
+
+  if (executablePath.includes(`${path.sep}.nvm${path.sep}`)) {
+    return 4
+  }
+
+  if (executablePath.includes(`${path.sep}.volta${path.sep}`)) {
+    return 3
+  }
+
+  if (executablePath.includes(`${path.sep}.asdf${path.sep}`)) {
+    return 2
+  }
+
+  if (executablePath.startsWith('/opt/homebrew/bin/')) {
+    return 1
+  }
+
+  return 0
+}
+
+async function resolvePreferredExecutable(command) {
+  const pathMatches = await searchExecutableCandidatesOnPath(command)
+  const managedMatches = await detectUserManagedExecutableCandidates(command)
+  const candidates = [...new Set([...pathMatches, ...managedMatches])]
+
+  if (candidates.length === 0) {
+    return ''
+  }
+
+  const annotated = await Promise.all(
+    candidates.map(async (executablePath) => ({
+      executablePath,
+      version: parseSemverVersion(await readExecutableVersion(executablePath)),
+      priority: executablePathPriority(executablePath),
+    })),
+  )
+
+  annotated.sort((left, right) => {
+    if (left.version && right.version) {
+      const versionDelta = compareSemverVersion(right.version, left.version)
+      if (versionDelta !== 0) {
+        return versionDelta
+      }
+    } else if (left.version || right.version) {
+      return left.version ? -1 : 1
+    }
+
+    const priorityDelta = right.priority - left.priority
+    if (priorityDelta !== 0) {
+      return priorityDelta
+    }
+
+    return left.executablePath.localeCompare(right.executablePath)
+  })
+
+  return annotated[0]?.executablePath || ''
 }
 
 export async function detectDeveloperToolExecutable({
@@ -270,7 +624,7 @@ export async function detectDeveloperToolExecutable({
   if (normalizedPath) {
     const resolvedPath = looksLikePath(normalizedPath)
       ? await checkExecutablePath(normalizedPath)
-      : await searchExecutableOnPath(normalizedPath)
+      : await resolvePreferredExecutable(normalizedPath)
 
     return {
       tool: normalizedTool,
@@ -285,7 +639,7 @@ export async function detectDeveloperToolExecutable({
   }
 
   for (const candidate of DEVELOPER_TOOL_DEFINITIONS[normalizedTool].commands) {
-    const resolvedPath = await searchExecutableOnPath(candidate)
+    const resolvedPath = await resolvePreferredExecutable(candidate)
     if (!resolvedPath) {
       continue
     }
