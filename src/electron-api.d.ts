@@ -5,11 +5,16 @@ import type {
   CancelSessionTaskResult,
   DeveloperToolDetectionResult,
   DesktopSettings,
+  MergeQueuedTaskInput,
+  MoveQueuedTaskInput,
   ProfileBindInput,
   ProfileRemoveInput,
   ProfileRemoveResult,
   ProfileSaveInput,
   ProjectProfile,
+  QueueTaskMutationResult,
+  SavePastedImagesInput,
+  SavedPastedImage,
   SpeechConfigTestInput,
   SpeechConfigTestResult,
   SessionActivateInput,
@@ -48,6 +53,7 @@ interface DesktopAgentApi {
   }) => Promise<DeveloperToolDetectionResult>
   openExternal: (target: string) => Promise<boolean>
   copyText: (text: string) => Promise<boolean>
+  savePastedImages: (payload: SavePastedImagesInput) => Promise<SavedPastedImage[]>
   logClientEvent: (payload: {
     sessionId?: string | null
     taskId?: string | null
@@ -56,6 +62,8 @@ interface DesktopAgentApi {
   }) => Promise<boolean>
   submitTextTurn: (payload: SubmitTextTurnInput) => Promise<TurnExecutionResult>
   queueTextTurn: (payload: SubmitTextTurnInput) => Promise<TurnExecutionResult>
+  moveQueuedTask: (payload: MoveQueuedTaskInput) => Promise<QueueTaskMutationResult>
+  mergeQueuedTask: (payload: MergeQueuedTaskInput) => Promise<QueueTaskMutationResult>
   submitVoiceTurn: (payload: SubmitVoiceTurnInput) => Promise<TurnExecutionResult>
   cancelSessionTask: (sessionId: string) => Promise<CancelSessionTaskResult>
   synthesizeSpeech: (payload: SynthesisRequest) => Promise<SynthesisResult>

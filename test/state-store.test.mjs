@@ -263,6 +263,43 @@ test('session threads are tracked separately per developer tool', async () => {
   })
 })
 
+test('queued tasks receive stable queue order and can be reordered in session detail', async () => {
+  const { store } = await createStoreFixture()
+  const sessionId = store.getAppState().activeSessionId
+  assert.ok(sessionId)
+
+  const firstTask = store.createTask({
+    sessionId,
+    type: 'text_turn',
+    provider: 'fake',
+    inputPreview: 'first queued task',
+    workingDirectory: '/tmp/queued-1',
+    status: 'queued',
+  })
+  const secondTask = store.createTask({
+    sessionId,
+    type: 'text_turn',
+    provider: 'fake',
+    inputPreview: 'second queued task',
+    workingDirectory: '/tmp/queued-2',
+    status: 'queued',
+  })
+
+  assert.equal(firstTask.queueOrder, 1)
+  assert.equal(secondTask.queueOrder, 2)
+
+  store.updateTask(firstTask.id, { queueOrder: 2 })
+  store.updateTask(secondTask.id, { queueOrder: 1 })
+
+  const detail = store.getSessionDetail(sessionId)
+  assert.ok(detail)
+  const queuedTasks = detail.tasks.filter((task) => task.status === 'queued')
+  assert.equal(queuedTasks[0].id, secondTask.id)
+  assert.equal(queuedTasks[0].queueOrder, 1)
+  assert.equal(queuedTasks[1].id, firstTask.id)
+  assert.equal(queuedTasks[1].queueOrder, 2)
+})
+
 test('listActiveTasks only returns queued and running tasks', async () => {
   const { store } = await createStoreFixture()
   const activeSessionId = store.getAppState().activeSessionId

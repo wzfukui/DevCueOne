@@ -40,9 +40,12 @@ contextBridge.exposeInMainWorld('desktopAgent', {
     invoke('tool:detect-developer-tool', payload),
   openExternal: (target) => invoke('system:open-external', { target }),
   copyText: (text) => invoke('clipboard:write-text', { text }),
+  savePastedImages: (payload) => invoke('clipboard:save-images', payload),
   logClientEvent: (payload) => invoke('event:log-client', payload),
   submitTextTurn: (payload) => invoke('agent:submit-text-turn', payload),
   queueTextTurn: (payload) => invoke('agent:queue-text-turn', payload),
+  moveQueuedTask: (payload) => invoke('agent:move-queued-task', payload),
+  mergeQueuedTask: (payload) => invoke('agent:merge-queued-task', payload),
   submitVoiceTurn: (payload) => invoke('agent:submit-voice-turn', payload),
   cancelSessionTask: (sessionId) =>
     invoke('agent:cancel-session-task', { sessionId }),

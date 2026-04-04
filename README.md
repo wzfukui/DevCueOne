@@ -106,6 +106,7 @@ Supported STT / TTS modes:
 ```bash
 git clone git@github.wzfukui:wzfukui/DevCueOne.git
 cd DevCueOne
+nvm install 22
 nvm use 22
 npm install
 npm run dev:desktop

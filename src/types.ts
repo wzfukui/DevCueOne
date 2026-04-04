@@ -163,6 +163,7 @@ export interface TaskRecord {
   status: TaskStatus
   provider: string
   inputPreview: string
+  queueOrder: number
   startedAt: string | null
   finishedAt: string | null
   summary: string
@@ -307,6 +308,23 @@ export interface SubmitTextTurnInput {
   pendingText?: string
 }
 
+export interface PastedImageInput {
+  fileName?: string
+  mimeType: string
+  base64: string
+}
+
+export interface SavePastedImagesInput {
+  sessionId?: string | null
+  images: PastedImageInput[]
+}
+
+export interface SavedPastedImage {
+  path: string
+  mimeType: string
+  sizeBytes: number
+}
+
 export interface SubmitVoiceTurnInput {
   sessionId: string
   audioBase64: string
@@ -318,6 +336,27 @@ export interface SubmitVoiceTurnInput {
 export interface CancelSessionTaskResult {
   cancelled: boolean
   target: 'queued' | 'running' | null
+}
+
+export interface MoveQueuedTaskInput {
+  sessionId: string
+  taskId: string
+  direction: 'up' | 'down'
+}
+
+export interface MergeQueuedTaskInput {
+  sessionId: string
+  taskId: string
+}
+
+export interface QueueTaskMutationResult {
+  ok: boolean
+  sessionId: string
+  taskId: string
+  action: 'move' | 'merge'
+  fromOrder?: number
+  toOrder?: number
+  targetTaskId?: string | null
 }
 
 export interface TurnExecutionResult {
@@ -334,6 +373,7 @@ export interface TurnExecutionResult {
   needTextContext?: boolean
   activeSessionId?: string
   threadId?: string | null
+  toolPath?: string
   workingDirectory?: string
   rawLogs?: string[]
 }

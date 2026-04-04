@@ -12,9 +12,11 @@ import voiceAcceptedCueUrl from './assets/sounds/voice-accepted.wav'
 import voiceRejectedCueUrl from './assets/sounds/voice-rejected.wav'
 import {
   APP_DISPLAY_NAME,
+  appendPastedImagePaths,
   buildSessionIdentifierCopyPayload,
   normalizeAppDisplayName,
   normalizeThemePreset,
+  resolveSessionRuntimeDiagnostics,
   shouldShowOnboardingOverlay,
   shouldShowSessionListSkeleton,
 } from './app-shell-utils.js'
@@ -339,6 +341,32 @@ function normalizeDeveloperToolValue(value: string | null | undefined): Develope
   return DEVELOPER_TOOL_OPTIONS.some((option) => option.value === value)
     ? (value as DeveloperTool)
     : null
+}
+
+function labelForRuntimeProvider(provider: string | null | undefined) {
+  switch (provider) {
+    case 'fake':
+      return 'Fake Runner'
+    case 'local':
+      return '本地执行器'
+    default:
+      return provider
+        ? providerLabelByValue(DEVELOPER_TOOL_OPTIONS, provider)
+        : '当前执行器'
+  }
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  let binary = ''
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize)
+    binary += String.fromCharCode(...chunk)
+  }
+
+  return window.btoa(binary)
 }
 
 function normalizeRendererSettings(
@@ -1277,6 +1305,10 @@ function formatEventKind(kind: string) {
       return '任务开始'
     case 'task_queued':
       return '任务排队'
+    case 'task_queue_reordered':
+      return '队列已重排'
+    case 'task_queue_merged':
+      return '队列已合并'
     case 'user_input':
       return '用户输入'
     case 'local_router':
@@ -1486,7 +1518,15 @@ function taskForSession(detail: SessionDetail | null) {
 
   return [...detail.tasks]
     .filter((task) => task.status === 'queued')
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0] ?? null
+    .sort((left, right) => {
+      const leftOrder = left.queueOrder > 0 ? left.queueOrder : Number.MAX_SAFE_INTEGER
+      const rightOrder = right.queueOrder > 0 ? right.queueOrder : Number.MAX_SAFE_INTEGER
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder
+      }
+
+      return left.createdAt.localeCompare(right.createdAt)
+    })[0] ?? null
 }
 
 function scheduledTasksForSession(detail: SessionDetail | null) {
@@ -1501,7 +1541,15 @@ function scheduledTasksForSession(detail: SessionDetail | null) {
     )
   const queuedTasks = detail.tasks
     .filter((task) => task.status === 'queued')
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .sort((left, right) => {
+      const leftOrder = left.queueOrder > 0 ? left.queueOrder : Number.MAX_SAFE_INTEGER
+      const rightOrder = right.queueOrder > 0 ? right.queueOrder : Number.MAX_SAFE_INTEGER
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder
+      }
+
+      return left.createdAt.localeCompare(right.createdAt)
+    })
 
   return [...runningTasks, ...queuedTasks]
 }
@@ -1591,6 +1639,7 @@ function createSessionScrollHarness(): SessionScrollHarness {
           status: 'running',
           provider: 'fake',
           inputPreview: '验证左侧滚动行为',
+          queueOrder: 0,
           startedAt: new Date(now - 15_000).toISOString(),
           finishedAt: null,
           summary: '验证左侧滚动行为',
@@ -1767,6 +1816,15 @@ function App() {
     () => scheduledTasksForSession(sessionDetail),
     [sessionDetail],
   )
+  const queuedSessionTasks = useMemo(
+    () => scheduledSessionTasks.filter((task) => task.status === 'queued'),
+    [scheduledSessionTasks],
+  )
+  const queuedTaskIndexById = useMemo(
+    () =>
+      new Map(queuedSessionTasks.map((task, index) => [task.id, index])),
+    [queuedSessionTasks],
+  )
   const activeSession = useMemo(
     () => appState?.sessions.find((item) => item.id === activeSessionId) ?? null,
     [activeSessionId, appState?.sessions],
@@ -1840,8 +1898,8 @@ function App() {
     conversationMessages.length - visibleConversationMessages.length,
   )
   const queuedTurnCount = useMemo(
-    () => scheduledSessionTasks.filter((task) => task.status === 'queued').length,
-    [scheduledSessionTasks],
+    () => queuedSessionTasks.length,
+    [queuedSessionTasks],
   )
   const currentLocalStage = activeSessionId ? localStages[activeSessionId] ?? null : null
   const currentMessageDraft = activeSessionId ? messageDrafts[activeSessionId] ?? '' : ''
@@ -4864,6 +4922,138 @@ function App() {
     setSessionMessageDraft,
   ])
 
+  const handleMoveQueuedTask = useCallback(
+    async (taskId: string, direction: 'up' | 'down') => {
+      if (!hasDesktopApi || !activeSessionId) {
+        return
+      }
+
+      try {
+        setLastErrorForSession(activeSessionId, '')
+        const result = await desktopAgent.moveQueuedTask({
+          sessionId: activeSessionId,
+          taskId,
+          direction,
+        })
+        setActivityHintForSession(
+          activeSessionId,
+          result.ok
+            ? direction === 'up'
+              ? '已上移队列任务。'
+              : '已下移队列任务。'
+            : '当前任务已经在这个方向的边界，未发生变更。',
+        )
+        await loadData(activeSessionId)
+      } catch (error) {
+        setLastErrorForSession(
+          activeSessionId,
+          error instanceof Error ? error.message : '调整队列顺序失败。',
+        )
+      }
+    },
+    [
+      activeSessionId,
+      desktopAgent,
+      hasDesktopApi,
+      loadData,
+      setActivityHintForSession,
+      setLastErrorForSession,
+    ],
+  )
+
+  const handleMergeQueuedTask = useCallback(
+    async (taskId: string) => {
+      if (!hasDesktopApi || !activeSessionId) {
+        return
+      }
+
+      try {
+        setLastErrorForSession(activeSessionId, '')
+        const result = await desktopAgent.mergeQueuedTask({
+          sessionId: activeSessionId,
+          taskId,
+        })
+        setActivityHintForSession(
+          activeSessionId,
+          result.ok ? '已并入上一条排队任务。' : '当前任务前面没有可并入的 queued 任务。',
+        )
+        await loadData(activeSessionId)
+      } catch (error) {
+        setLastErrorForSession(
+          activeSessionId,
+          error instanceof Error ? error.message : '合并排队任务失败。',
+        )
+      }
+    },
+    [
+      activeSessionId,
+      desktopAgent,
+      hasDesktopApi,
+      loadData,
+      setActivityHintForSession,
+      setLastErrorForSession,
+    ],
+  )
+
+  const handleTurnInputPaste = useCallback(
+    async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const imageFiles = Array.from(event.clipboardData?.items ?? [])
+        .map((item) =>
+          item.kind === 'file' && item.type.startsWith('image/') ? item.getAsFile() : null,
+        )
+        .filter((file): file is File => Boolean(file))
+
+      if (!imageFiles.length || !hasDesktopApi || !activeSessionId) {
+        return
+      }
+
+      event.preventDefault()
+
+      try {
+        const images = await Promise.all(
+          imageFiles.map(async (file) => ({
+            fileName: file.name || undefined,
+            mimeType: file.type || 'image/png',
+            base64: arrayBufferToBase64(await file.arrayBuffer()),
+          })),
+        )
+        const savedImages = await desktopAgent.savePastedImages({
+          sessionId: activeSessionId,
+          images,
+        })
+
+        if (!savedImages.length) {
+          setActivityHintForSession(activeSessionId, '检测到图片，但未能保存到临时目录。')
+          return
+        }
+
+        setMessageDrafts((current) => ({
+          ...current,
+          [activeSessionId]: appendPastedImagePaths(
+            current[activeSessionId] ?? '',
+            savedImages.map((image) => image.path),
+          ),
+        }))
+        setLastErrorForSession(activeSessionId, '')
+        setActivityHintForSession(
+          activeSessionId,
+          savedImages.length === 1
+            ? '已粘贴图片，并把本地临时路径写入输入框。'
+            : `已粘贴 ${savedImages.length} 张图片，并把本地临时路径写入输入框。`,
+        )
+      } catch (error) {
+        setLastErrorForSession(activeSessionId, error instanceof Error ? error.message : '粘贴图片失败。')
+      }
+    },
+    [
+      activeSessionId,
+      desktopAgent,
+      hasDesktopApi,
+      setActivityHintForSession,
+      setLastErrorForSession,
+    ],
+  )
+
   const handleStageTurnInput = useCallback(() => {
     if (!activeSessionId || !currentMessageDraft.trim()) {
       return
@@ -5264,26 +5454,10 @@ function App() {
     activeTask?.status === 'running' ||
     activeTask?.status === 'queued'
 
-  const backendWorkerLabel = useMemo(() => {
-    switch (activeTask?.provider) {
-      case 'fake':
-        return 'Fake Runner'
-      case 'claude_code':
-        return 'Claude Code'
-      case 'cursor_cli':
-        return 'Cursor CLI'
-      case 'gemini_cli':
-        return 'Gemini CLI'
-      case 'qwen_cli':
-        return 'Qwen Code'
-      case 'local':
-        return '本地执行器'
-      case 'codex':
-        return 'Codex'
-      default:
-        return '当前执行器'
-    }
-  }, [activeTask?.provider])
+  const backendWorkerLabel = useMemo(
+    () => labelForRuntimeProvider(activeTask?.provider),
+    [activeTask?.provider],
+  )
 
   const backendWorkTone =
     activeTask?.status === 'queued' ? 'queued' : isBackendBusy ? 'running' : 'idle'
@@ -5374,14 +5548,35 @@ function App() {
   const activeSessionToolLabel = sessionDetail?.boundProfile?.developerTool
     ? providerLabelByValue(DEVELOPER_TOOL_OPTIONS, sessionDetail.boundProfile.developerTool)
     : selectedDeveloperToolLabel
-  const activeSessionRuntimeSessionId =
-    sessionDetail?.session.developerToolThreads?.[activeSessionDeveloperTool] ||
-    sessionDetail?.session.codexThreadId ||
-    null
-  const activeSessionRuntimeLabel = providerLabelByValue(
-    DEVELOPER_TOOL_OPTIONS,
-    activeSessionDeveloperTool,
+  const activeSessionRuntimeFallbackPath =
+    (activeSessionDeveloperTool === settingsDraft.developerTool
+      ? settingsDraft.developerToolPath
+      : settingsDraft.developerToolPaths[activeSessionDeveloperTool]) ||
+    defaultExecutableNameForDeveloperTool(activeSessionDeveloperTool)
+  const activeSessionRuntime = useMemo(
+    () =>
+      resolveSessionRuntimeDiagnostics({
+        sessionId: sessionDetail?.session.id,
+        codexThreadId: sessionDetail?.session.codexThreadId ?? null,
+        developerToolThreads: sessionDetail?.session.developerToolThreads ?? null,
+        activeTaskProvider: activeTask?.provider ?? null,
+        fallbackTool: activeSessionDeveloperTool,
+        fallbackToolPath: activeSessionRuntimeFallbackPath,
+        events: sessionDetail?.events ?? [],
+      }),
+    [
+      activeSessionDeveloperTool,
+      activeSessionRuntimeFallbackPath,
+      activeTask?.provider,
+      sessionDetail?.events,
+      sessionDetail?.session.codexThreadId,
+      sessionDetail?.session.developerToolThreads,
+      sessionDetail?.session.id,
+    ],
   )
+  const activeSessionRuntimeSessionId = activeSessionRuntime.threadId || null
+  const activeSessionRuntimeLabel = labelForRuntimeProvider(activeSessionRuntime.provider)
+  const activeSessionRuntimePath = activeSessionRuntime.toolPath || ''
   const selectedDeveloperToolResolvedPath =
     developerToolDetection?.tool === settingsDraft.developerTool && developerToolDetection?.found
       ? developerToolDetection.resolvedPath
@@ -8644,6 +8839,9 @@ function App() {
             <p className="panel-note">
               不方便语音准确输入的 IP 地址、域名、URL、英文字符串、命令或文件路径，可以直接在这里补充。
             </p>
+            <p className="panel-note">
+              支持直接使用 <code>Cmd/Ctrl + V</code> 粘贴图片；应用会先保存到临时目录，再把完整本地路径写入输入框。
+            </p>
 
             <div className="composer">
               {hasCurrentContextDraft ? (
@@ -8683,6 +8881,9 @@ function App() {
                     setSessionMessageDraft(activeSessionId, event.target.value)
                   }
                 }}
+                onPaste={(event) => {
+                  void handleTurnInputPaste(event)
+                }}
                 placeholder="例如：192.168.1.12、api.example.com、https://demo.site/path、英文变量名或命令。这里适合填写不方便语音准确说出的内容。"
               />
 
@@ -8703,14 +8904,51 @@ function App() {
                         key={task.id}
                         className={`turn-queue-item${task.status === 'running' ? ' is-running' : ''}`}
                       >
-                        <div className="turn-queue-item-copy">
-                          <div className="turn-queue-item-head">
-                            <span className="summary-chip">#{index + 1}</span>
-                            <span className={`summary-chip${task.status === 'running' ? ' accent' : ''}`}>
-                              {formatTaskStatus(task.status)}
-                            </span>
+                        <div className="turn-queue-item-main">
+                          <div className="turn-queue-item-copy">
+                            <div className="turn-queue-item-head">
+                              <span className="summary-chip">#{index + 1}</span>
+                              <span className={`summary-chip${task.status === 'running' ? ' accent' : ''}`}>
+                                {formatTaskStatus(task.status)}
+                              </span>
+                              {task.status === 'queued' && task.queueOrder > 0 ? (
+                                <span className="summary-chip">{`队列位次 ${task.queueOrder}`}</span>
+                              ) : null}
+                            </div>
+                            <strong>{task.inputPreview || task.summary || '未命名任务'}</strong>
                           </div>
-                          <strong>{task.inputPreview || task.summary || '未命名任务'}</strong>
+
+                          {task.status === 'queued' ? (
+                            <div className="turn-queue-item-actions">
+                              <button
+                                type="button"
+                                className="mini-button ghost"
+                                onClick={() => void handleMoveQueuedTask(task.id, 'up')}
+                                disabled={(queuedTaskIndexById.get(task.id) ?? 0) <= 0}
+                              >
+                                上移
+                              </button>
+                              <button
+                                type="button"
+                                className="mini-button ghost"
+                                onClick={() => void handleMoveQueuedTask(task.id, 'down')}
+                                disabled={
+                                  (queuedTaskIndexById.get(task.id) ?? queuedSessionTasks.length) >=
+                                  queuedSessionTasks.length - 1
+                                }
+                              >
+                                下移
+                              </button>
+                              <button
+                                type="button"
+                                className="mini-button ghost"
+                                onClick={() => void handleMergeQueuedTask(task.id)}
+                                disabled={(queuedTaskIndexById.get(task.id) ?? 0) <= 0}
+                              >
+                                并入上一条
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -8805,7 +9043,15 @@ function App() {
                     <code>{sessionDetail?.session.id || '—'}</code>
                   </div>
                   <div className="diagnostic-meta-item">
-                    <span>{`${activeSessionRuntimeLabel} 运行会话 ID`}</span>
+                    <span>工具</span>
+                    <code>{activeSessionRuntimeLabel || '—'}</code>
+                  </div>
+                  <div className="diagnostic-meta-item">
+                    <span>工具路径</span>
+                    <code>{activeSessionRuntimePath || '—'}</code>
+                  </div>
+                  <div className="diagnostic-meta-item">
+                    <span>工具会话 ID</span>
                     <code>{activeSessionRuntimeSessionId || '—'}</code>
                   </div>
                 </div>

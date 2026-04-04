@@ -3,10 +3,13 @@ import assert from 'node:assert/strict'
 
 import {
   APP_DISPLAY_NAME,
+  appendPastedImagePaths,
   DEFAULT_THEME_PRESET,
   buildSessionIdentifierCopyPayload,
+  buildPastedImagePathBlock,
   normalizeAppDisplayName,
   normalizeThemePreset,
+  resolveSessionRuntimeDiagnostics,
   shouldShowOnboardingOverlay,
   shouldShowSessionListSkeleton,
 } from '../src/app-shell-utils.js'
@@ -87,6 +90,81 @@ test('buildSessionIdentifierCopyPayload includes runtime session id when present
     }),
     null,
   )
+})
+
+test('buildPastedImagePathBlock formats one or more image paths for the prompt', () => {
+  assert.equal(
+    buildPastedImagePathBlock(['/tmp/pasted-image-1.png']),
+    'Attached image path: /tmp/pasted-image-1.png',
+  )
+
+  assert.equal(
+    buildPastedImagePathBlock(['/tmp/pasted-image-1.png', '/tmp/pasted-image-2.png']),
+    'Attached image paths:\n- /tmp/pasted-image-1.png\n- /tmp/pasted-image-2.png',
+  )
+})
+
+test('appendPastedImagePaths appends the generated image block after existing text', () => {
+  assert.equal(
+    appendPastedImagePaths('Check the current layout', ['/tmp/pasted-image-1.png']),
+    'Check the current layout\n\nAttached image path: /tmp/pasted-image-1.png',
+  )
+
+  assert.equal(
+    appendPastedImagePaths('   ', ['/tmp/pasted-image-1.png']),
+    'Attached image path: /tmp/pasted-image-1.png',
+  )
+})
+
+test('resolveSessionRuntimeDiagnostics prefers the latest task event snapshot over current settings', () => {
+  const resolved = resolveSessionRuntimeDiagnostics({
+    sessionId: 'session-1',
+    codexThreadId: 'codex-thread-1',
+    developerToolThreads: {
+      claude_code: 'claude-thread-1',
+      codex: 'codex-thread-1',
+    },
+    fallbackTool: 'claude_code',
+    fallbackToolPath: '/usr/local/bin/claude',
+    events: [
+      {
+        kind: 'task_result',
+        payload: {
+          backend: 'codex',
+          threadId: 'codex-thread-2',
+          toolPath: '/usr/local/bin/codex',
+        },
+      },
+    ],
+  })
+
+  assert.deepEqual(resolved, {
+    sessionId: 'session-1',
+    provider: 'codex',
+    threadId: 'codex-thread-2',
+    toolPath: '/usr/local/bin/codex',
+    source: 'task_result',
+  })
+})
+
+test('resolveSessionRuntimeDiagnostics falls back to the selected tool when there is no task snapshot', () => {
+  const resolved = resolveSessionRuntimeDiagnostics({
+    sessionId: 'session-2',
+    developerToolThreads: {
+      claude_code: 'claude-thread-3',
+    },
+    fallbackTool: 'claude_code',
+    fallbackToolPath: '/usr/local/bin/claude',
+    events: [],
+  })
+
+  assert.deepEqual(resolved, {
+    sessionId: 'session-2',
+    provider: 'claude_code',
+    threadId: 'claude-thread-3',
+    toolPath: '/usr/local/bin/claude',
+    source: 'fallback',
+  })
 })
 
 test('shouldShowSessionListSkeleton only renders during desktop bootstrap before state is ready', () => {

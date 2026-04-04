@@ -179,6 +179,21 @@ function summarizeTaskInputPreview(input = '') {
   return normalized.length > 140 ? `${normalized.slice(0, 140)}…` : normalized
 }
 
+function mergeQueuedTurnText(existingValue = '', nextValue = '') {
+  const normalizedExisting = String(existingValue ?? '').trim()
+  const normalizedNext = String(nextValue ?? '').trim()
+
+  if (!normalizedExisting) {
+    return normalizedNext
+  }
+
+  if (!normalizedNext) {
+    return normalizedExisting
+  }
+
+  return `${normalizedExisting}\n\n${normalizedNext}`
+}
+
 function normalizeLanguageBucket(language = '') {
   return language.toLowerCase().startsWith('en') ? 'en' : 'zh'
 }
@@ -483,6 +498,42 @@ function extensionFromMimeType(mimeType) {
   return 'webm'
 }
 
+function imageExtensionFromMimeType(mimeType) {
+  const normalizedMimeType = String(mimeType ?? '').toLowerCase()
+
+  if (normalizedMimeType.includes('jpeg') || normalizedMimeType.includes('jpg')) {
+    return 'jpg'
+  }
+  if (normalizedMimeType.includes('webp')) {
+    return 'webp'
+  }
+  if (normalizedMimeType.includes('gif')) {
+    return 'gif'
+  }
+  if (normalizedMimeType.includes('bmp')) {
+    return 'bmp'
+  }
+  if (normalizedMimeType.includes('tiff') || normalizedMimeType.includes('tif')) {
+    return 'tiff'
+  }
+
+  return 'png'
+}
+
+function sanitizePastedImageBaseName(fileName) {
+  const normalizedFileName = String(fileName ?? '').trim()
+  if (!normalizedFileName) {
+    return 'pasted-image'
+  }
+
+  const baseName = path.basename(normalizedFileName, path.extname(normalizedFileName))
+  const sanitizedBaseName = baseName
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return sanitizedBaseName.slice(0, 48) || 'pasted-image'
+}
+
 function mimeTypeFromExtension(fileName) {
   const extension = path.extname(fileName).toLowerCase()
 
@@ -502,6 +553,49 @@ function mimeTypeFromExtension(fileName) {
     default:
       return 'audio/mpeg'
   }
+}
+
+async function savePastedImages(payload) {
+  const images = Array.isArray(payload?.images) ? payload.images : []
+  if (!images.length) {
+    return []
+  }
+
+  const sessionId = String(payload?.sessionId ?? '').trim()
+  const tempDirectory = path.join(app.getPath('temp'), 'devcueone-pasted-images')
+  await fs.mkdir(tempDirectory, { recursive: true })
+
+  const savedImages = []
+
+  for (const [index, image] of images.entries()) {
+    const base64 = String(image?.base64 ?? '').trim()
+    const mimeType = String(image?.mimeType ?? '').trim().toLowerCase()
+    if (!base64 || !mimeType.startsWith('image/')) {
+      continue
+    }
+
+    const imageBytes = Buffer.from(base64, 'base64')
+    if (!imageBytes.byteLength) {
+      continue
+    }
+
+    const extension = imageExtensionFromMimeType(mimeType)
+    const baseName = sanitizePastedImageBaseName(image?.fileName)
+    const sessionPrefix = sessionId ? `${sessionId.slice(0, 8)}-` : ''
+    const filePath = path.join(
+      tempDirectory,
+      `${baseName}-${sessionPrefix}${randomUUID()}-${index + 1}.${extension}`,
+    )
+
+    await fs.writeFile(filePath, imageBytes)
+    savedImages.push({
+      path: filePath,
+      mimeType,
+      sizeBytes: imageBytes.byteLength,
+    })
+  }
+
+  return savedImages
 }
 
 function decodeBase64Audio(audioBase64) {
@@ -777,6 +871,27 @@ function findPendingTaskForSession(sessionId) {
   return queuedTasks.find((task) => task.sessionId === sessionId) ?? null
 }
 
+function queuedJobsForSession(sessionId) {
+  return queuedTasks.filter((task) => task.sessionId === sessionId)
+}
+
+function syncQueuedTaskOrderForSession(sessionId) {
+  let queueOrder = 1
+
+  for (const queuedTask of queuedTasks) {
+    if (queuedTask.sessionId !== sessionId) {
+      continue
+    }
+
+    queuedTask.queueOrder = queueOrder
+    stateStore.updateTask(queuedTask.taskId, {
+      queueOrder,
+      inputPreview: summarizeTaskInputPreview(queuedTask.inputText),
+    })
+    queueOrder += 1
+  }
+}
+
 function hasRunningTaskForSession(sessionId) {
   for (const task of runningTasks.values()) {
     if (task.sessionId === sessionId) {
@@ -808,9 +923,17 @@ async function finalizeTask(taskId, patch) {
 async function startQueuedTask(job) {
   const runtime = createRuntime(job)
   runningTasks.set(job.taskId, runtime)
+  const startThreadId =
+    normalizeProjectDeveloperTool(job.provider)
+      ? getSessionThreadIdForDeveloperTool(
+          stateStore.getSession(job.sessionId),
+          job.provider,
+        )
+      : null
   stateStore.updateTask(job.taskId, {
     status: 'running',
     startedAt: nowIso(),
+    queueOrder: 0,
     workingDirectory: job.workingDirectory,
   })
   stateStore.createEvent({
@@ -820,6 +943,10 @@ async function startQueuedTask(job) {
     payload: {
       source: job.source,
       queuedAt: job.queuedAt,
+      provider: job.provider,
+      toolPath: job.toolPath || '',
+      workingDirectory: job.workingDirectory,
+      threadId: startThreadId,
     },
   })
   broadcastStateChanged()
@@ -829,7 +956,9 @@ async function startQueuedTask(job) {
     runningTasks.delete(job.taskId)
     await finalizeTask(job.taskId, {
       status: 'completed',
+      provider: result.backend || job.provider,
       finishedAt: nowIso(),
+      queueOrder: 0,
       summary: result.uiReply ?? result.spokenReply ?? '',
       errorMessage: '',
       codexThreadId: result.threadId ?? null,
@@ -852,6 +981,7 @@ async function startQueuedTask(job) {
       await finalizeTask(job.taskId, {
         status: 'cancelled',
         finishedAt,
+        queueOrder: 0,
         summary: '本轮任务已取消。',
         errorMessage: '',
         codexThreadId: null,
@@ -878,6 +1008,7 @@ async function startQueuedTask(job) {
       await finalizeTask(job.taskId, {
         status: 'failed',
         finishedAt,
+        queueOrder: 0,
         summary: '任务执行失败。',
         errorMessage: message,
         codexThreadId: null,
@@ -905,12 +1036,14 @@ function scheduleTask(job, options = {}) {
 
   const canStartImmediately =
     !pending && getRunningTaskCount() < getConfiguredConcurrency()
+  const queueOrder = canStartImmediately ? 0 : stateStore.getNextQueueOrder(job.sessionId)
 
   const task = stateStore.createTask({
     sessionId: job.sessionId,
     type: job.type,
     provider: job.provider,
     inputPreview: summarizeTaskInputPreview(job.inputText),
+    queueOrder,
     workingDirectory: job.workingDirectory,
     status: canStartImmediately ? 'running' : 'queued',
   })
@@ -919,6 +1052,7 @@ function scheduleTask(job, options = {}) {
     ...job,
     taskId: task.id,
     queuedAt: nowIso(),
+    queueOrder: task.queueOrder,
     resolve: options.resolve || (() => {}),
     reject: options.reject || (() => {}),
   }
@@ -941,6 +1075,10 @@ function scheduleTask(job, options = {}) {
       source: queuedJob.source,
       inputPreview: summarizeTaskInputPreview(queuedJob.inputText),
       mode,
+      provider: queuedJob.provider,
+      toolPath: queuedJob.toolPath || '',
+      workingDirectory: queuedJob.workingDirectory,
+      queueOrder: queuedJob.queueOrder,
     },
   })
   broadcastStateChanged()
@@ -965,6 +1103,137 @@ function enqueueTask(job, options = {}) {
   })
 }
 
+function moveQueuedTask(payload) {
+  const sessionId = String(payload?.sessionId ?? '').trim()
+  const taskId = String(payload?.taskId ?? '').trim()
+  const direction = payload?.direction === 'down' ? 'down' : 'up'
+  if (!sessionId || !taskId) {
+    throw new Error('缺少队列任务标识。')
+  }
+
+  const sessionQueue = queuedJobsForSession(sessionId)
+  const currentIndex = sessionQueue.findIndex((task) => task.taskId === taskId)
+  if (currentIndex === -1) {
+    throw new Error('目标队列任务不存在，或已经开始执行。')
+  }
+
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  if (targetIndex < 0 || targetIndex >= sessionQueue.length) {
+    return {
+      ok: false,
+      sessionId,
+      taskId,
+      action: 'move',
+      fromOrder: currentIndex + 1,
+      toOrder: currentIndex + 1,
+      targetTaskId: null,
+    }
+  }
+
+  const currentTask = sessionQueue[currentIndex]
+  const targetTask = sessionQueue[targetIndex]
+  const currentGlobalIndex = queuedTasks.findIndex((task) => task.taskId === currentTask.taskId)
+  const targetGlobalIndex = queuedTasks.findIndex((task) => task.taskId === targetTask.taskId)
+  if (currentGlobalIndex === -1 || targetGlobalIndex === -1) {
+    throw new Error('队列状态已变化，请重试。')
+  }
+
+  ;[queuedTasks[currentGlobalIndex], queuedTasks[targetGlobalIndex]] = [
+    queuedTasks[targetGlobalIndex],
+    queuedTasks[currentGlobalIndex],
+  ]
+  syncQueuedTaskOrderForSession(sessionId)
+  stateStore.createEvent({
+    sessionId,
+    taskId,
+    kind: 'task_queue_reordered',
+    payload: {
+      direction,
+      fromOrder: currentIndex + 1,
+      toOrder: targetIndex + 1,
+      targetTaskId: targetTask.taskId,
+    },
+  })
+  broadcastStateChanged()
+
+  return {
+    ok: true,
+    sessionId,
+    taskId,
+    action: 'move',
+    fromOrder: currentIndex + 1,
+    toOrder: targetIndex + 1,
+    targetTaskId: targetTask.taskId,
+  }
+}
+
+function mergeQueuedTask(payload) {
+  const sessionId = String(payload?.sessionId ?? '').trim()
+  const taskId = String(payload?.taskId ?? '').trim()
+  if (!sessionId || !taskId) {
+    throw new Error('缺少队列任务标识。')
+  }
+
+  const sessionQueue = queuedJobsForSession(sessionId)
+  const currentIndex = sessionQueue.findIndex((task) => task.taskId === taskId)
+  if (currentIndex <= 0) {
+    return {
+      ok: false,
+      sessionId,
+      taskId,
+      action: 'merge',
+      fromOrder: currentIndex >= 0 ? currentIndex + 1 : undefined,
+      toOrder: currentIndex >= 0 ? currentIndex + 1 : undefined,
+      targetTaskId: null,
+    }
+  }
+
+  const sourceTask = sessionQueue[currentIndex]
+  const targetTask = sessionQueue[currentIndex - 1]
+  targetTask.inputText = mergeQueuedTurnText(targetTask.inputText, sourceTask.inputText)
+  targetTask.pendingText = mergeQueuedTurnText(targetTask.pendingText, sourceTask.pendingText)
+
+  const sourceGlobalIndex = queuedTasks.findIndex((task) => task.taskId === sourceTask.taskId)
+  if (sourceGlobalIndex === -1) {
+    throw new Error('目标队列任务不存在，或已经开始执行。')
+  }
+
+  queuedTasks.splice(sourceGlobalIndex, 1)
+  stateStore.updateTask(targetTask.taskId, {
+    inputPreview: summarizeTaskInputPreview(targetTask.inputText),
+  })
+  stateStore.updateTask(sourceTask.taskId, {
+    status: 'cancelled',
+    queueOrder: 0,
+    finishedAt: nowIso(),
+    summary: '已并入上一条排队任务。',
+    errorMessage: '',
+  })
+  syncQueuedTaskOrderForSession(sessionId)
+  stateStore.createEvent({
+    sessionId,
+    taskId: sourceTask.taskId,
+    kind: 'task_queue_merged',
+    payload: {
+      sourceTaskId: sourceTask.taskId,
+      targetTaskId: targetTask.taskId,
+      sourceOrder: currentIndex + 1,
+      targetOrder: currentIndex,
+    },
+  })
+  broadcastStateChanged()
+
+  return {
+    ok: true,
+    sessionId,
+    taskId: sourceTask.taskId,
+    action: 'merge',
+    fromOrder: currentIndex + 1,
+    toOrder: currentIndex,
+    targetTaskId: targetTask.taskId,
+  }
+}
+
 function cancelQueuedTask(sessionId) {
   const index = queuedTasks.findIndex((task) => task.sessionId === sessionId)
   if (index === -1) {
@@ -975,9 +1244,11 @@ function cancelQueuedTask(sessionId) {
   stateStore.updateTask(task.taskId, {
     status: 'cancelled',
     finishedAt: nowIso(),
+    queueOrder: 0,
     summary: '排队中的任务已取消。',
     errorMessage: '',
   })
+  syncQueuedTaskOrderForSession(sessionId)
   stateStore.addMessage({
     sessionId,
     taskId: task.taskId,
@@ -1317,6 +1588,7 @@ ${languagePrompt}
 - 不要凭空猜测项目路径、接口地址和配置值。
 - 如果你执行了动作，spokenReply 先说结论。
 - 工作目录中的现有修改不能被随意还原。
+- 如果补充文本里出现本地图片路径，把它视为当前任务可直接访问的附件，必要时读取并结合图片内容完成任务。
 
 当前工作目录：
 ${workingDirectory || '(未提供)'}
@@ -2154,6 +2426,7 @@ async function runFakeCodexTurn(payload, settings, sessionDetail) {
   if (/need more info|需要更多信息|缺少|missing/i.test(combined)) {
     return {
       threadId: sessionThreadId,
+      toolPath: '',
       status: 'need_input',
       backend: 'fake',
       spokenReply: isEnglish ? 'I need a bit more detail first.' : '我还需要一点更精确的信息。',
@@ -2169,6 +2442,7 @@ async function runFakeCodexTurn(payload, settings, sessionDetail) {
   if (/fail|error|失败|报错/i.test(combined)) {
     return {
       threadId: sessionThreadId,
+      toolPath: '',
       status: 'failed',
       backend: 'fake',
       spokenReply: isEnglish ? 'The fake runner reports a failure.' : 'Fake runner 模拟了一次失败。',
@@ -2184,6 +2458,7 @@ async function runFakeCodexTurn(payload, settings, sessionDetail) {
   const threadId = sessionThreadId || `fake-thread-${sessionDetail.session.id.slice(0, 8)}`
   return {
     threadId,
+    toolPath: '',
     status: 'done',
     backend: 'fake',
     spokenReply: isEnglish
@@ -2261,6 +2536,8 @@ async function runCodexCliTurn(runtime, payload, settings, sessionDetail) {
   let stderrBuffer = ''
   let threadId = sessionThreadId
   const rawLogs = [
+    'turn:tool=codex',
+    `turn:command=${codexPath}`,
     `turn:mode=${shouldResume ? 'resume' : 'exec'}`,
     `turn:cwd=${workingDirectory}`,
     `turn:session=${sessionDetail.session.id}`,
@@ -2368,6 +2645,7 @@ async function runCodexCliTurn(runtime, payload, settings, sessionDetail) {
       return {
         threadId,
         backend: 'codex',
+        toolPath: codexPath,
         rawLogs,
         status: 'cancelled',
         spokenReply: '',
@@ -2386,6 +2664,7 @@ async function runCodexCliTurn(runtime, payload, settings, sessionDetail) {
     return {
       threadId,
       backend: 'codex',
+      toolPath: codexPath,
       rawLogs,
       ...parsed,
     }
@@ -2412,6 +2691,7 @@ async function runPrintModeDeveloperToolTurn({
   let stderrBuffer = ''
   const rawLogs = [
     `turn:tool=${backend}`,
+    `turn:command=${command}`,
     `turn:cwd=${workingDirectory}`,
     `turn:mode=print`,
   ]
@@ -2491,6 +2771,7 @@ async function runPrintModeDeveloperToolTurn({
       return {
         threadId: sessionThreadId,
         backend,
+        toolPath: command,
         rawLogs,
         status: 'cancelled',
         spokenReply: '',
@@ -2505,6 +2786,7 @@ async function runPrintModeDeveloperToolTurn({
 
   return {
     ...parseStructuredDeveloperToolOutput(stdoutBuffer, backend, sessionThreadId),
+    toolPath: command,
     rawLogs,
   }
 }
@@ -2813,7 +3095,17 @@ async function processTextTurn(runtime) {
     sessionId: runtime.sessionId,
     taskId: runtime.taskId,
     kind: 'task_result',
-    payload: result,
+    payload: {
+      ...result,
+      provider: result.backend,
+      toolPath:
+        typeof result.toolPath === 'string'
+          ? result.toolPath.trim()
+          : result.backend === settings.developerTool
+            ? settings.developerToolPath?.trim() || ''
+            : '',
+      workingDirectory,
+    },
   })
 
   return {
@@ -3121,6 +3413,7 @@ async function submitTextTurn(payload) {
     sourceLabel: '本轮来自纯文字',
     type: 'text_turn',
     provider: effectiveSettings.executionMode === 'fake' ? 'fake' : effectiveSettings.developerTool,
+    toolPath: effectiveSettings.executionMode === 'fake' ? '' : effectiveSettings.developerToolPath,
     inputText: payload.text?.trim() || '',
     pendingText: payload.pendingText?.trim() || '',
     workingDirectory:
@@ -3146,6 +3439,7 @@ async function queueTextTurn(payload) {
     sourceLabel: '本轮来自纯文字队列',
     type: 'text_turn',
     provider: effectiveSettings.executionMode === 'fake' ? 'fake' : effectiveSettings.developerTool,
+    toolPath: effectiveSettings.executionMode === 'fake' ? '' : effectiveSettings.developerToolPath,
     inputText: payload.text?.trim() || '',
     pendingText: payload.pendingText?.trim() || '',
     workingDirectory:
@@ -3185,6 +3479,7 @@ async function submitVoiceTurn(payload) {
     sourceLabel: `本轮来自语音 · ${voiceInputModeLabel(captureMode)}`,
     type: 'voice_turn',
     provider: effectiveSettings.executionMode === 'fake' ? 'fake' : effectiveSettings.developerTool,
+    toolPath: effectiveSettings.executionMode === 'fake' ? '' : effectiveSettings.developerToolPath,
     pendingText: payload.pendingText?.trim() || '',
     audioBase64: payload.audioBase64,
     mimeType: payload.mimeType,
@@ -3236,6 +3531,7 @@ app.whenReady().then(async () => {
     clipboard.writeText(String(payload?.text ?? ''))
     return true
   })
+  ipcMain.handle('clipboard:save-images', async (_, payload) => savePastedImages(payload))
   ipcMain.handle('event:log-client', async (_, payload) => {
     stateStore.createEvent({
       sessionId: payload?.sessionId || null,
@@ -3248,6 +3544,8 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('agent:submit-text-turn', async (_, payload) => submitTextTurn(payload))
   ipcMain.handle('agent:queue-text-turn', async (_, payload) => queueTextTurn(payload))
+  ipcMain.handle('agent:move-queued-task', async (_, payload) => moveQueuedTask(payload))
+  ipcMain.handle('agent:merge-queued-task', async (_, payload) => mergeQueuedTask(payload))
   ipcMain.handle('agent:submit-voice-turn', async (_, payload) => submitVoiceTurn(payload))
   ipcMain.handle('agent:cancel-session-task', async (_, payload) => cancelSessionTask(payload.sessionId))
   ipcMain.handle('audio:speak', async (_, payload) => synthesizeSpeech(payload, normalizeSettings(stateStore.getSettings())))

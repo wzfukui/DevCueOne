@@ -35,3 +35,33 @@ export function buildSessionIdentifierCopyPayload(input: {
       successHint: string
     }
   | null
+
+export function buildPastedImagePathBlock(
+  imagePaths: Array<string | null | undefined>,
+): string
+
+export function appendPastedImagePaths(
+  existingText: string | null | undefined,
+  imagePaths: Array<string | null | undefined>,
+): string
+
+export function resolveSessionRuntimeDiagnostics(input: {
+  sessionId?: string | null
+  codexThreadId?: string | null
+  developerToolThreads?: Record<string, string | null | undefined> | null
+  activeTaskProvider?: string | null
+  fallbackTool?: string | null
+  fallbackToolPath?: string | null
+  events?:
+    | Array<{
+        kind?: string | null
+        payload?: Record<string, unknown> | null
+      }>
+    | null
+}): {
+  sessionId: string
+  provider: string
+  threadId: string
+  toolPath: string
+  source: string
+}

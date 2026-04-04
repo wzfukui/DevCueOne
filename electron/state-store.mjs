@@ -78,6 +78,15 @@ function normalizeDeveloperToolThreadMap(value) {
   }, {})
 }
 
+function normalizeQueueOrder(value) {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return 0
+  }
+
+  return Math.floor(numericValue)
+}
+
 export class AppStateStore {
   constructor({
     databasePath,
@@ -181,8 +190,10 @@ export class AppStateStore {
     this.ensureColumn('sessions', 'pinned_at', 'TEXT')
     this.ensureColumn('sessions', 'developer_tool_threads_json', "TEXT NOT NULL DEFAULT '{}'")
     this.ensureColumn('tasks', 'input_preview', "TEXT NOT NULL DEFAULT ''")
+    this.ensureColumn('tasks', 'queue_order', 'INTEGER NOT NULL DEFAULT 0')
     this.importLegacyDatabase()
     this.migrateSessionThreadStorage()
+    this.normalizeQueuedTaskOrderStorage()
     this.deduplicateProfilesByWorkingDirectory()
 
     await this.bootstrap()
@@ -253,6 +264,46 @@ export class AppStateStore {
     } catch (error) {
       this.db.exec('ROLLBACK')
       throw error
+    }
+  }
+
+  normalizeQueuedTaskOrderStorage() {
+    const clearInactiveOrders = this.db.prepare(`
+      UPDATE tasks
+      SET queue_order = 0
+      WHERE status != 'queued' AND queue_order != 0
+    `)
+    const listQueuedSessions = this.db.prepare(`
+      SELECT DISTINCT session_id AS sessionId
+      FROM tasks
+      WHERE status = 'queued'
+      ORDER BY session_id ASC
+    `)
+    const listQueuedTasks = this.db.prepare(`
+      SELECT
+        id,
+        queue_order AS queueOrder,
+        created_at AS createdAt
+      FROM tasks
+      WHERE session_id = ? AND status = 'queued'
+      ORDER BY
+        CASE WHEN queue_order > 0 THEN 0 ELSE 1 END,
+        queue_order ASC,
+        created_at ASC
+    `)
+    const updateQueueOrder = this.db.prepare(`
+      UPDATE tasks
+      SET queue_order = ?
+      WHERE id = ?
+    `)
+
+    clearInactiveOrders.run()
+
+    for (const row of listQueuedSessions.all()) {
+      const queuedTasks = listQueuedTasks.all(row.sessionId)
+      queuedTasks.forEach((task, index) => {
+        updateQueueOrder.run(index + 1, task.id)
+      })
     }
   }
 
@@ -1491,13 +1542,19 @@ export class AppStateStore {
     inputPreview = '',
     workingDirectory = '',
     status = 'queued',
+    queueOrder,
   }) {
+    const normalizedQueueOrder =
+      status === 'queued'
+        ? normalizeQueueOrder(queueOrder) || this.getNextQueueOrder(sessionId)
+        : 0
     const task = {
       id: randomUUID(),
       sessionId,
       type,
       provider,
       inputPreview,
+      queueOrder: normalizedQueueOrder,
       status,
       workingDirectory,
       createdAt: nowIso(),
@@ -1517,6 +1574,7 @@ export class AppStateStore {
           status,
           provider,
           input_preview,
+          queue_order,
           started_at,
           finished_at,
           summary,
@@ -1524,7 +1582,7 @@ export class AppStateStore {
           codex_thread_id,
           working_directory,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         task.id,
@@ -1533,6 +1591,7 @@ export class AppStateStore {
         task.status,
         task.provider,
         task.inputPreview,
+        task.queueOrder,
         task.startedAt,
         task.finishedAt,
         task.summary,
@@ -1562,6 +1621,8 @@ export class AppStateStore {
         SET
           status = ?,
           provider = ?,
+          input_preview = ?,
+          queue_order = ?,
           started_at = ?,
           finished_at = ?,
           summary = ?,
@@ -1573,6 +1634,8 @@ export class AppStateStore {
       .run(
         next.status,
         next.provider,
+        next.inputPreview,
+        normalizeQueueOrder(next.queueOrder),
         next.startedAt,
         next.finishedAt,
         next.summary,
@@ -1596,6 +1659,7 @@ export class AppStateStore {
             status,
             provider,
             input_preview AS inputPreview,
+            queue_order AS queueOrder,
             started_at AS startedAt,
             finished_at AS finishedAt,
             summary,
@@ -1620,6 +1684,7 @@ export class AppStateStore {
             status,
             provider,
             input_preview AS inputPreview,
+            queue_order AS queueOrder,
             started_at AS startedAt,
           finished_at AS finishedAt,
           summary,
@@ -1629,7 +1694,14 @@ export class AppStateStore {
           created_at AS createdAt
         FROM tasks
         WHERE session_id = ?
-        ORDER BY created_at DESC
+        ORDER BY
+          CASE
+            WHEN status = 'running' THEN 0
+            WHEN status = 'queued' THEN 1
+            ELSE 2
+          END ASC,
+          CASE WHEN status = 'queued' THEN queue_order ELSE 0 END ASC,
+          created_at DESC
       `)
       .all(sessionId)
   }
@@ -1644,6 +1716,7 @@ export class AppStateStore {
           status,
           provider,
           input_preview AS inputPreview,
+          queue_order AS queueOrder,
           started_at AS startedAt,
           finished_at AS finishedAt,
           summary,
@@ -1656,6 +1729,18 @@ export class AppStateStore {
         ORDER BY created_at DESC
       `)
       .all()
+  }
+
+  getNextQueueOrder(sessionId) {
+    const row = this.db
+      .prepare(`
+        SELECT COALESCE(MAX(queue_order), 0) AS maxQueueOrder
+        FROM tasks
+        WHERE session_id = ? AND status = 'queued'
+      `)
+      .get(sessionId)
+
+    return Math.max(1, Number(row?.maxQueueOrder ?? 0) + 1)
   }
 
   createEvent({
