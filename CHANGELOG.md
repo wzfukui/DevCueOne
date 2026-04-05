@@ -4,6 +4,16 @@ All notable product-facing changes in DevCue One should be recorded in this file
 
 The format is intentionally lightweight and release-oriented.
 
+## 0.4.8 - 2026-04-05
+
+Maintenance release for signed distribution refresh.
+
+Highlights:
+
+- release metadata advanced to `0.4.8`
+- signed and notarized macOS packaging was rerun for both Apple Silicon and Intel installers under the current `one.devcue.app` identity
+- website-compatible generic macOS download aliases remain part of the release output for downstream distribution
+
 ## 0.4.6 - 2026-04-04
 
 Patch release for developer-tool runtime hardening and diagnostics cleanup.
